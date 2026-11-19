@@ -5,6 +5,9 @@
 # listed under [known] with a reason; listed differences that no longer occur fail
 # the check too, so remove them once fixed.
 
+# v1 never sends null (exclude_none), but must accept it wherever upstream does.
+check_parse_nullability = true
+
 [renames]
 # Upstream definition name = our name (models, unions and Literal aliases).
 AgentNotification = "AgentNotificationMessage"

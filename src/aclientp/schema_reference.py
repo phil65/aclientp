@@ -36,6 +36,7 @@ from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
+    ForwardRef,
     Literal,
     TypeAliasType,
     TypeGuard,
@@ -438,6 +439,9 @@ class FieldInfo:
 
 def wire_fields(model: type[BaseModel]) -> dict[str, FieldInfo]:
     """Wire name and behaviour of each serialized field of ``model``."""
+    if any(isinstance(info.annotation, ForwardRef) for info in model.model_fields.values()):
+        # Annotations stay unresolved until the model is rebuilt (first validation).
+        model.model_rebuild(force=True)
     return {
         (info.alias or name): FieldInfo(
             required=info.is_required(),
@@ -488,6 +492,11 @@ class Conformance:
     """Compare which fields accept ``null``. For model packages that send ``None`` as
     ``null`` and leave out ``MISSING`` fields (v2), not for ``exclude_none`` ones (v1)."""
 
+    check_parse_nullability: bool = False
+    """Report fields where upstream allows ``null`` but the model rejects ``None``
+    (valid messages fail to parse). Implied by ``check_nullability``; for packages
+    that never send ``null`` (v1)."""
+
     check_constraints: bool = False
     """Compare numeric and length constraints (``minimum``, ``minItems``, ...)."""
 
@@ -505,6 +514,7 @@ class Conformance:
             dict(data.get("renames", {})),
             dict(data.get("known", {})),
             bool(data.get("check_nullability", False)),
+            bool(data.get("check_parse_nullability", False)),
             bool(data.get("check_constraints", False)),
             bool(data.get("allow_missing", False)),
         )
@@ -526,6 +536,7 @@ def check(
     renames: Mapping[str, str],
     *,
     check_nullability: bool = False,
+    check_parse_nullability: bool = False,
     check_constraints: bool = False,
 ) -> list[Finding]:
     """Compare the models with the upstream schema.
@@ -551,7 +562,15 @@ def check(
             continue
         tags = added_tags.get(key, set())
         findings.extend(
-            _compare_fields(key, shape, model, tags, check_nullability, check_constraints)
+            _compare_fields(
+                key,
+                shape,
+                model,
+                tags,
+                check_nullability,
+                check_constraints,
+                check_parse_nullability=check_parse_nullability,
+            )
         )
     findings.extend(_check_enums(upstream, ours, renames))
     findings.extend(_check_methods(upstream, ours))
@@ -619,6 +638,8 @@ def _compare_fields(
     added_tags: set[str],
     check_nullability: bool,
     check_constraints: bool = False,
+    *,
+    check_parse_nullability: bool = False,
 ) -> Iterator[Finding]:
     fields = wire_fields(model)
     tag = shape.discriminator[0] if shape.discriminator else None
@@ -646,14 +667,14 @@ def _compare_fields(
                 f"constraint:{key}.{prop}",
                 f"upstream {dict(shape.constraints.get(prop, {}))}, {where} {info.constraints}",
             )
-        if not check_nullability:
+        if not (check_nullability or check_parse_nullability):
             continue
         if prop in shape.nullable and not info.accepts_none:
             yield Finding(
                 f"rejects-null:{key}.{prop}",
                 f"upstream allows null, {where} does not: valid messages fail to parse",
             )
-        elif info.accepts_none and prop not in shape.nullable:
+        elif check_nullability and info.accepts_none and prop not in shape.nullable:
             yield Finding(
                 f"sends-null:{key}.{prop}",
                 f"{where} accepts None and would send null, upstream does not allow it",
@@ -685,6 +706,7 @@ def run_check(protocol_version: int, root: UPath = REFERENCE_ROOT) -> Report:
         ours,
         conformance.renames,
         check_nullability=conformance.check_nullability,
+        check_parse_nullability=conformance.check_parse_nullability,
         check_constraints=conformance.check_constraints,
     )
     if conformance.allow_missing:

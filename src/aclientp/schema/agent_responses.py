@@ -78,7 +78,7 @@ class LoadSessionResponse(Response):
     See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)
     """
 
-    config_options: Sequence[SessionConfigOption] = []
+    config_options: Sequence[SessionConfigOption] | None = None
     """The full list of config options with updated values."""
 
 
@@ -94,7 +94,7 @@ class ForkSessionResponse(Response):
     session_id: str
     """Unique identifier for the newly created forked session."""
 
-    config_options: Sequence[SessionConfigOption] = []
+    config_options: Sequence[SessionConfigOption] | None = None
     """The full list of config options with updated values."""
 
     @classmethod
@@ -122,7 +122,7 @@ class ResumeSessionResponse(Response):
     See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)
     """
 
-    config_options: Sequence[SessionConfigOption] = []
+    config_options: Sequence[SessionConfigOption] | None = None
     """The full list of config options with updated values."""
 
     @classmethod

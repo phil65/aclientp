@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, ForwardRef, Literal
 
 from pydantic import MISSING, BaseModel, Field
 import pytest
@@ -19,6 +19,7 @@ from aclientp.schema_reference import (
     split_known,
     tag_sort_key,
     update_reference,
+    wire_fields,
 )
 
 
@@ -271,3 +272,37 @@ def test_pinned_reference_implementations_are_valid() -> None:
 
     assert {r.name for r in references} >= {"typescript-sdk", "claude-agent-acp"}
     assert all(len(r.commit) == 40 and r.paths for r in references)
+
+
+def test_parse_nullability_reports_only_rejected_nulls() -> None:
+    nullable_chunk = {
+        **CHUNK,
+        "properties": {**CHUNK["properties"], "messageId": {"type": ["string", "null"]}},
+    }
+
+    class Chunk(BaseModel):
+        session_update: Literal["agent_message_chunk"] = Field(
+            default="agent_message_chunk", alias="sessionUpdate"
+        )
+        content: str | None  # would be sends-null in full mode
+        message_id: str = Field(default="", alias="messageId")  # rejects null
+
+    upstream = UpstreamSchema.parse(
+        _schema(ContentChunk=nullable_chunk, SessionUpdate=UPDATE, ToolKind=KIND), META
+    )
+
+    ids = _ids(check(upstream, _ours(Chunk, OpenKind), {}, check_parse_nullability=True))
+
+    assert ids == {"rejects-null:SessionUpdate[sessionUpdate=agent_message_chunk].messageId"}
+
+
+def test_forward_references_are_resolved() -> None:
+    class Holder(BaseModel):
+        items: list[DefinedLater] | None = None  # type: ignore[name-defined]  # noqa: F821
+
+    assert isinstance(Holder.model_fields["items"].annotation, ForwardRef)  # unresolved yet
+    globals()["DefinedLater"] = int
+
+    fields = wire_fields(Holder)
+
+    assert fields["items"].accepts_none
