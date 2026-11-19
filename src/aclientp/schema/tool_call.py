@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal, Self
 from pydantic import Field
 
 from aclientp.schema.base import AnnotatedObject, Schema
-from aclientp.schema.content_blocks import (  # noqa: TC001
+from aclientp.schema.content_blocks import (
     Annotations,
     Audience,
     AudioContentBlock,
@@ -43,7 +43,7 @@ ToolCallStatus = Literal["pending", "in_progress", "completed", "failed"]
 PermissionKind = Literal["allow_once", "allow_always", "reject_once", "reject_always"]
 
 
-class ToolCall(AnnotatedObject):
+class ToolCallUpdate(AnnotatedObject):
     """Details about the tool call requiring permission."""
 
     content: Sequence[ToolCallContent] | None = None
@@ -67,6 +67,9 @@ class ToolCall(AnnotatedObject):
     title: str | None = None
     """Update the human-readable title."""
 
+    name: str | None = None
+    """Programmatic name of the tool being invoked."""
+
     tool_call_id: str
     """The ID of the tool call being updated."""
 
@@ -80,14 +83,14 @@ class FileEditToolCallContent(AnnotatedObject):
     new_text: str
     """The new content after modification."""
 
-    old_text: str | None
+    old_text: str | None = None
     """The original content (None for new files)."""
 
     path: str
     """The file path being modified."""
 
 
-class TerminalToolCallContent(Schema):
+class TerminalToolCallContent(AnnotatedObject):
     """Embed a terminal created with `terminal/create` by its id.
 
     The terminal must be added before calling `terminal/release`.
@@ -101,13 +104,13 @@ class TerminalToolCallContent(Schema):
     """The ID of the terminal being embedded."""
 
 
-class ContentToolCallContent[TContentBlock: ContentBlock = ContentBlock](Schema):
+class ContentToolCallContent(AnnotatedObject):
     """Standard content block (text, images, resources)."""
 
     type: Literal["content"] = Field(default="content", init=False)
     """Standard content block (text, images, resources)."""
 
-    content: TContentBlock
+    content: ContentBlock
     """The actual content block."""
 
     @classmethod
@@ -303,11 +306,15 @@ class ToolCallLocation(AnnotatedObject):
     See protocol docs: [Following the Agent](https://agentclientprotocol.com/protocol/tool-calls#following-the-agent)
     """
 
-    line: int | None = Field(default=None, ge=0)
-    """Optional line number within the file."""
+    line: int | None = Field(default=0, ge=0)
+    """Optional 1-based line number within the file.
+
+    Defaults to 0 (unspecified) rather than None: some clients only render
+    clickable paths when the field is present.
+    """
 
     path: str
-    """The file path being accessed or modified."""
+    """The absolute file path being accessed or modified."""
 
 
 class DeniedOutcome(Schema):
@@ -322,13 +329,17 @@ class DeniedOutcome(Schema):
     outcome: Literal["cancelled"] = Field(default="cancelled", init=False)
 
 
-class AllowedOutcome(Schema):
+class AllowedOutcome(AnnotatedObject):
     """The user selected one of the provided options."""
 
     option_id: str
     """The ID of the option the user selected."""
 
     outcome: Literal["selected"] = Field(default="selected", init=False)
+
+
+RequestPermissionOutcome = DeniedOutcome | AllowedOutcome
+"""The user's decision on a permission request: cancelled, or an option selected."""
 
 
 class PermissionOption(AnnotatedObject):
@@ -344,4 +355,19 @@ class PermissionOption(AnnotatedObject):
     """Unique identifier for this permission option."""
 
 
-ToolCallContent = ContentToolCallContent | FileEditToolCallContent | TerminalToolCallContent
+class SessionReferenceToolCallContent(AnnotatedObject):
+    """**UNSTABLE**: Reference to another session, e.g. a subagent spawned by this tool call."""
+
+    type: Literal["session"] = Field(default="session", init=False)
+    """Session reference tool call content."""
+
+    session_id: str
+    """The referenced session."""
+
+
+ToolCallContent = (
+    ContentToolCallContent
+    | FileEditToolCallContent
+    | TerminalToolCallContent
+    | SessionReferenceToolCallContent
+)

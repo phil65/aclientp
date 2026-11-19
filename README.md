@@ -24,3 +24,109 @@
 [![PyUp](https://pyup.io/repos/github/phil65/aclientp/shield.svg)](https://pyup.io/repos/github/phil65/aclientp/)
 
 [Read the documentation!](https://phil65.github.io/aclientp/)
+
+**AClientP** implements the [Agent Client Protocol](https://agentclientprotocol.com)
+(ACP, the protocol between code editors and AI coding agents) in typed Python: both
+the agent and the client side, for the released **v1** protocol and the **draft v2**.
+
+The name sets it apart from the other "ACP"s (Agent Communication Protocol,
+Agent Connect Protocol, Agentic Commerce Protocol): **a**gent **client** **p**rotocol.
+
+## Why another ACP library?
+
+- **Checked against upstream.** The models are hand-written, but every release pins
+  an upstream schema release (`schema/v1`, `schema/v2`) and a conformance check
+  compares the models with it: fields, required/optional, nullability, limits, enums,
+  union variants and methods. Known differences are documented with a reason.
+- **v1 and v2.** v2 lives next to v1 (`aclientp.schema.v2`, `aclientp.v2`), and
+  `RoutedAgentConnection` serves a client with the v1 or v2 agent, chosen by its
+  `initialize` request, like the official TypeScript SDK's router.
+- **Typed throughout.** Pydantic models, `mypy --strict`, discriminated unions with
+  fallback variants that keep unknown fields (so custom and future messages survive a
+  round trip).
+- **Small core.** pydantic, anyio, anyenv, httpx, structlog and upathtools; web
+  servers, WebSockets and tracing are extras.
+
+## Installation
+
+```bash
+uv add aclientp
+```
+
+| Extra | Adds |
+| --- | --- |
+| `websocket` | WebSocket transport |
+| `bridge` | `aclientp-bridge`: expose a stdio agent over HTTP / WebSocket |
+| `debug` | `aclientp-debug-server`: a mock agent with a web UI |
+| `tracing` | logfire spans for handled requests |
+
+## Quick start
+
+### A v1 agent over stdio
+
+```python
+import anyio
+
+from aclientp import Agent, run_agent
+from aclientp.schema import (
+    InitializeRequest,
+    InitializeResponse,
+    NewSessionRequest,
+    NewSessionResponse,
+    PromptRequest,
+    PromptResponse,
+)
+
+
+class EchoAgent(Agent):
+    async def initialize(self, params: InitializeRequest) -> InitializeResponse:
+        return InitializeResponse(protocol_version=1)
+
+    async def new_session(self, params: NewSessionRequest) -> NewSessionResponse:
+        return NewSessionResponse(session_id="session-1")
+
+    async def prompt(self, params: PromptRequest) -> PromptResponse:
+        return PromptResponse(stop_reason="end_turn")
+
+
+anyio.run(run_agent, EchoAgent())
+```
+
+### Serving v1 and v2
+
+```python
+from aclientp.router import RoutedAgentConnection
+from aclientp.stdio import stdio_streams
+
+
+async def main() -> None:
+    stdin, stdout = await stdio_streams()
+    conn = RoutedAgentConnection(stdout, stdin, v1=MyV1Agent(), v2=MyV2Agent)
+    await conn.wait_closed()
+```
+
+A v2 agent subclasses `aclientp.v2.agent.Agent` and overrides the methods it supports;
+the rest answer `-32601`. v2 models follow the v2 patch rules: optional fields default
+to `MISSING` and are left out, `None` is sent as `null`. Serialize with `to_wire` and
+test fields with `is_set` (`MISSING` is truthy).
+
+## Staying in sync with upstream
+
+```bash
+uv run python -m aclientp.schema_reference latest           # pinned vs newest tag
+uv run python -m aclientp.schema_reference sync --dry-run   # changelog of the newest tag
+uv run python -m aclientp.schema_reference sync             # pin it
+uv run python -m aclientp.schema_reference check            # models vs pinned schema
+uv run python -m aclientp.schema_reference refs             # changes in reference implementations
+```
+
+Use `--protocol 2` for v2. `schema/<version>/conformance.toml` lists renames and known
+differences; the test suite runs the same check, so undocumented drift fails CI.
+`schema/references.toml` pins reference implementations (the official TypeScript SDK
+and claude-agent-acp) by commit; `refs` lists the upstream commits since each pin with
+a compare link.
+
+## Status
+
+v1 follows `schema-v1.33.0`, v2 follows the draft `schema-v2.0.0-alpha.17`. The v2
+API is **unstable** and follows the draft as it changes.

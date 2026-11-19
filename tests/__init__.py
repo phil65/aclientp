@@ -1,3 +1,1 @@
-from pathlib import Path
-
-TESTS_DIR = Path(__file__).parent
+"""Tests for the ACP protocol library."""

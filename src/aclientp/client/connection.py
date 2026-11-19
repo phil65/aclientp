@@ -5,48 +5,30 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any, Self
 
-import logfire
-
-
-if TYPE_CHECKING:
-    from types import TracebackType
-
-    from aclientp.client.protocol import Client
-    from aclientp.connection import StreamObserver
-    from aclientp.schema import (
-        AuthenticateRequest,
-        CancelNotification,
-        ClientMethod,
-        CreateTerminalResponse,
-        ForkSessionRequest,
-        InitializeRequest,
-        KillTerminalCommandResponse,
-        ListSessionsRequest,
-        LoadSessionRequest,
-        NewSessionRequest,
-        PromptRequest,
-        ReadTextFileResponse,
-        ReleaseTerminalResponse,
-        RequestPermissionResponse,
-        ResumeSessionRequest,
-        SetSessionModelRequest,
-        SetSessionModeRequest,
-        TerminalOutputResponse,
-        WaitForTerminalExitResponse,
-        WriteTextFileResponse,
-    )
-
+from aclientp._tracing import instrument
 from aclientp.agent.protocol import Agent
+from aclientp.client.protocol import Client
 from aclientp.connection import Connection
 from aclientp.exceptions import RequestError
 from aclientp.schema import (
+    ArchiveSessionResponse,
     AuthenticateResponse,
+    AuthStatusResponse,
+    AuthStatusUpdateNotification,
+    CloseSessionResponse,
     CreateTerminalRequest,
+    DeleteSessionResponse,
+    DisableProviderResponse,
     ForkSessionResponse,
     InitializeResponse,
-    KillTerminalCommandRequest,
+    KillTerminalRequest,
+    ListProvidersResponse,
     ListSessionsResponse,
     LoadSessionResponse,
+    LogoutResponse,
+    MessageMcpNotification,
+    MessageMcpRequest,
+    MessageMcpResponse,
     NewSessionResponse,
     PromptResponse,
     ReadTextFileRequest,
@@ -54,17 +36,57 @@ from aclientp.schema import (
     RequestPermissionRequest,
     ResumeSessionResponse,
     SessionNotification,
-    SetSessionModelResponse,
+    SessionOptionsResponse,
+    SessionStatusResponse,
+    SetProviderResponse,
+    SetSessionConfigOptionResponse,
     SetSessionModeResponse,
+    SetSessionTitleResponse,
     TerminalOutputRequest,
+    UnarchiveSessionResponse,
     WaitForTerminalExitRequest,
     WriteTextFileRequest,
+)
+from aclientp.schema.elicitation import (
+    ElicitationCompleteNotification,
+    ElicitationRequest,
 )
 
 
 if TYPE_CHECKING:
-    import asyncio
     from collections.abc import Callable
+
+    from anyio.abc import ByteReceiveStream, ByteSendStream
+    from pydantic import BaseModel
+
+    from aclientp.connection import StreamObserver
+    from aclientp.schema import (
+        ArchiveSessionRequest,
+        AuthenticateRequest,
+        AuthStatusRequest,
+        CancelNotification,
+        ClientMethod,
+        ClientResponse,
+        CloseSessionRequest,
+        DeleteSessionRequest,
+        DisableProviderRequest,
+        ForkSessionRequest,
+        InitializeRequest,
+        ListProvidersRequest,
+        ListSessionsRequest,
+        LoadSessionRequest,
+        LogoutRequest,
+        NewSessionRequest,
+        PromptRequest,
+        ResumeSessionRequest,
+        SessionOptionsRequest,
+        SessionStatusRequest,
+        SetProviderRequest,
+        SetSessionConfigOptionRequest,
+        SetSessionModeRequest,
+        SetSessionTitleRequest,
+        UnarchiveSessionRequest,
+    )
 
 
 class ClientSideConnection(Agent):
@@ -74,95 +96,154 @@ class ClientSideConnection(Agent):
 
     Args:
       to_client: factory that receives this connection and returns your Client
-      input: asyncio.StreamWriter (local -> peer)
-      output: asyncio.StreamReader (peer -> local)
+      input: ByteSendStream (local -> peer)
+      output: ByteReceiveStream (peer -> local)
     """
 
     def __init__(
         self,
-        to_client: Callable[[Agent], Client],
-        input_stream: asyncio.StreamWriter,
-        output_stream: asyncio.StreamReader,
+        to_client: Callable[[Agent], Client] | Client,
+        input_stream: ByteSendStream,
+        output_stream: ByteReceiveStream,
         observers: list[StreamObserver] | None = None,
     ) -> None:
         # Build client first so handler can delegate
-        client = to_client(self)
+        client = to_client if isinstance(to_client, Client) else to_client(self)
         handler = partial(_handle_client_method, client)
         self._conn = Connection(handler, input_stream, output_stream, observers=observers)
+
+    async def _request[T: BaseModel](
+        self, method: str, params: BaseModel, response_type: type[T]
+    ) -> T:
+        dct = params.model_dump(mode="json", by_alias=True, exclude_none=True)
+        resp = await self._conn.request_object(method, dct)
+        return response_type.model_validate(resp)
 
     # agent-bound methods (client -> agent)
     async def initialize(self, params: InitializeRequest) -> InitializeResponse:
         dct = params.model_dump(
             mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
         )
-        resp = await self._conn.send_request("initialize", dct)
+        resp = await self._conn.request_object("initialize", dct)
         return InitializeResponse.model_validate(resp)
 
     async def new_session(self, params: NewSessionRequest) -> NewSessionResponse:
         # Don't exclude_defaults - MCP server 'type' field is required for discriminated unions
         dct = params.model_dump(mode="json", by_alias=True, exclude_none=True)
-        resp = await self._conn.send_request("session/new", dct)
+        resp = await self._conn.request_object("session/new", dct)
         return NewSessionResponse.model_validate(resp)
 
     async def load_session(self, params: LoadSessionRequest) -> LoadSessionResponse:
         dct = params.model_dump(
             mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
         )
-        resp = await self._conn.send_request("session/load", dct)
-        payload = resp if isinstance(resp, dict) else {}
-        return LoadSessionResponse.model_validate(payload)
+        resp = await self._conn.request_object("session/load", dct)
+        return LoadSessionResponse.model_validate(resp)
 
     async def list_sessions(self, params: ListSessionsRequest) -> ListSessionsResponse:
         dct = params.model_dump(
             mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
         )
-        resp = await self._conn.send_request("session/list", dct)
+        resp = await self._conn.request_object("session/list", dct)
         return ListSessionsResponse.model_validate(resp)
 
     async def fork_session(self, params: ForkSessionRequest) -> ForkSessionResponse:
         dct = params.model_dump(
             mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
         )
-        resp = await self._conn.send_request("session/fork", dct)
+        resp = await self._conn.request_object("session/fork", dct)
         return ForkSessionResponse.model_validate(resp)
 
     async def resume_session(self, params: ResumeSessionRequest) -> ResumeSessionResponse:
         dct = params.model_dump(
             mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
         )
-        resp = await self._conn.send_request("session/resume", dct)
-        payload = resp if isinstance(resp, dict) else {}
-        return ResumeSessionResponse.model_validate(payload)
+        resp = await self._conn.request_object("session/resume", dct)
+        return ResumeSessionResponse.model_validate(resp)
+
+    async def close_session(self, params: CloseSessionRequest) -> CloseSessionResponse:
+        dct = params.model_dump(
+            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
+        )
+        resp = await self._conn.request_object("session/close", dct)
+        return CloseSessionResponse.model_validate(resp)
 
     async def set_session_mode(self, params: SetSessionModeRequest) -> SetSessionModeResponse:
         dct = params.model_dump(
             mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
         )
-        resp = await self._conn.send_request("session/set_mode", dct)
-        payload = resp if isinstance(resp, dict) else {}
-        return SetSessionModeResponse.model_validate(payload)
+        resp = await self._conn.request_object("session/set_mode", dct)
+        return SetSessionModeResponse.model_validate(resp)
 
-    async def set_session_model(self, params: SetSessionModelRequest) -> SetSessionModelResponse:
+    async def delete_session(self, params: DeleteSessionRequest) -> DeleteSessionResponse:
+        return await self._request("session/delete", params, DeleteSessionResponse)
+
+    async def archive_session(self, params: ArchiveSessionRequest) -> ArchiveSessionResponse:
+        return await self._request("session/archive", params, ArchiveSessionResponse)
+
+    async def unarchive_session(self, params: UnarchiveSessionRequest) -> UnarchiveSessionResponse:
+        return await self._request("session/unarchive", params, UnarchiveSessionResponse)
+
+    async def session_status(self, params: SessionStatusRequest) -> SessionStatusResponse:
+        return await self._request("session/status", params, SessionStatusResponse)
+
+    async def session_options(self, params: SessionOptionsRequest) -> SessionOptionsResponse:
+        return await self._request("session/options", params, SessionOptionsResponse)
+
+    async def set_session_title(self, params: SetSessionTitleRequest) -> SetSessionTitleResponse:
+        return await self._request("session/set_title", params, SetSessionTitleResponse)
+
+    async def auth_status(self, params: AuthStatusRequest) -> AuthStatusResponse:
+        return await self._request("auth/status", params, AuthStatusResponse)
+
+    async def list_providers(self, params: ListProvidersRequest) -> ListProvidersResponse:
+        return await self._request("providers/list", params, ListProvidersResponse)
+
+    async def set_provider(self, params: SetProviderRequest) -> SetProviderResponse:
+        return await self._request("providers/set", params, SetProviderResponse)
+
+    async def disable_provider(self, params: DisableProviderRequest) -> DisableProviderResponse:
+        return await self._request("providers/disable", params, DisableProviderResponse)
+
+    async def mcp_message(self, params: MessageMcpRequest) -> MessageMcpResponse:
+        return await self._request("mcp/message", params, MessageMcpResponse)
+
+    async def mcp_notification(self, params: MessageMcpNotification) -> None:
+        dct = params.model_dump(mode="json", by_alias=True, exclude_none=True)
+        await self._conn.send_notification("mcp/message", dct)
+
+    async def set_session_config_option(
+        self, params: SetSessionConfigOptionRequest
+    ) -> SetSessionConfigOptionResponse:
         dct = params.model_dump(
             mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
         )
-        resp = await self._conn.send_request("session/set_model", dct)
-        payload = resp if isinstance(resp, dict) else {}
-        return SetSessionModelResponse.model_validate(payload)
+        resp = await self._conn.request_object("session/set_config_option", dct)
+        return SetSessionConfigOptionResponse.model_validate(resp)
 
     async def authenticate(self, params: AuthenticateRequest) -> AuthenticateResponse:
         dct = params.model_dump(
             mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
         )
-        resp = await self._conn.send_request("authenticate", dct)
-        payload = resp if isinstance(resp, dict) else {}
-        return AuthenticateResponse.model_validate(payload)
+        resp = await self._conn.request_object("authenticate", dct)
+        return AuthenticateResponse.model_validate(resp)
+
+    async def logout(self, params: LogoutRequest) -> LogoutResponse:
+        dct = params.model_dump(
+            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
+        )
+        resp = await self._conn.request_object("logout", dct)
+        return LogoutResponse.model_validate(resp)
 
     async def prompt(self, params: PromptRequest) -> PromptResponse:
         # Don't exclude_defaults here - the 'type' field in content blocks has a default
         # value but is required for discriminated unions to work
         dct = params.model_dump(mode="json", by_alias=True, exclude_none=True)
-        resp = await self._conn.send_request("session/prompt", dct)
+        resp = await self._conn.request_object("session/prompt", dct)
+        # The agent sends all updates of a turn before the prompt response, but they are
+        # handled concurrently: make sure the turn's updates are processed before the
+        # caller treats the turn as finished.
+        await self._conn.wait_for_notifications(partial(_is_session_update, params.session_id))
         return PromptResponse.model_validate(resp)
 
     async def cancel(self, params: CancelNotification) -> None:
@@ -172,7 +253,7 @@ class ClientSideConnection(Agent):
         await self._conn.send_notification("session/cancel", dct)
 
     async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        return await self._conn.send_request(f"_{method}", params)  # type: ignore[no-any-return]
+        return await self._conn.request_object(f"_{method}", params)
 
     async def ext_notification(self, method: str, params: dict[str, Any]) -> None:
         await self._conn.send_notification(f"_{method}", params)
@@ -180,37 +261,32 @@ class ClientSideConnection(Agent):
     async def close(self) -> None:
         await self._conn.close()
 
+    async def wait_closed(self) -> None:
+        """Wait until the agent disconnected or the connection was closed."""
+        await self._conn.wait_closed()
+
     async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
+    async def __aexit__(self, *args: object) -> None:
         await self.close()
 
 
-@logfire.instrument(r"Handle Client Method {method}")
+def _is_session_update(session_id: str, method: str, params: Any) -> bool:
+    return (
+        method == "session/update"
+        and isinstance(params, dict)
+        and params.get("sessionId") == session_id
+    )
+
+
+@instrument(r"Handle Client Method {method}")
 async def _handle_client_method(  # noqa: PLR0911
     client: Client,
     method: ClientMethod | str,
     params: dict[str, Any] | None,
     is_notification: bool,
-) -> (
-    WriteTextFileResponse
-    | ReadTextFileResponse
-    | RequestPermissionResponse
-    | SessionNotification
-    | CreateTerminalResponse
-    | TerminalOutputResponse
-    | WaitForTerminalExitResponse
-    | ReleaseTerminalResponse
-    | KillTerminalCommandResponse
-    | dict[str, Any]
-    | None
-):
+) -> ClientResponse | dict[str, Any] | None:
     """Handle client method calls."""
     match method:
         case "fs/write_text_file":
@@ -239,12 +315,27 @@ async def _handle_client_method(  # noqa: PLR0911
             wait_request = WaitForTerminalExitRequest.model_validate(params)
             return await client.wait_for_terminal_exit(wait_request)
         case "terminal/kill":
-            kill_request = KillTerminalCommandRequest.model_validate(params)
+            kill_request = KillTerminalRequest.model_validate(params)
             return await client.kill_terminal(kill_request)
+        case "elicitation/create":
+            elicitation_request = ElicitationRequest.model_validate(params)
+            return await client.elicitation(elicitation_request)
+        case "elicitation/complete":
+            complete_notification = ElicitationCompleteNotification.model_validate(params)
+            await client.elicitation_complete(complete_notification)
+            return None
+        case "auth/status_update":
+            await client.auth_status_update(AuthStatusUpdateNotification.model_validate(params))
+            return None
+        case "mcp/message" if is_notification:
+            await client.mcp_notification(MessageMcpNotification.model_validate(params))
+            return None
+        case "mcp/message":
+            return await client.mcp_message(MessageMcpRequest.model_validate(params))
         case str() if method.startswith("_") and is_notification:
             await client.ext_notification(method[1:], params or {})
             return None
-        case str() if method.startswith("_") and is_notification:
+        case str() if method.startswith("_"):
             return await client.ext_method(method[1:], params or {})
         case _:
             raise RequestError.method_not_found(method)

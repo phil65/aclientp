@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from asyncio import transports as aio_transports
-import contextlib
 from contextlib import asynccontextmanager
-import logging
-import platform
+import io
 import sys
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
+
+import anyio
+from anyio.abc import ByteReceiveStream, ByteSendStream
 
 from aclientp.agent.connection import AgentSideConnection
 from aclientp.client.connection import ClientSideConnection
@@ -16,134 +16,63 @@ from aclientp.transports import spawn_stdio_transport
 
 
 if TYPE_CHECKING:
-    import asyncio.subprocess as aio_subprocess
-    from collections.abc import AsyncIterator, Callable, Mapping
+    from collections.abc import AsyncGenerator, Callable, Mapping
     from pathlib import Path
+
+    from anyio.abc import Process
 
     from aclientp.agent.protocol import Agent
     from aclientp.client.protocol import Client
     from aclientp.connection import MethodHandler, StreamObserver
 
-__all__ = [
-    "connect_to_agent",
-    "run_agent",
-    "spawn_agent_process",
-    "spawn_client_process",
-    "spawn_stdio_connection",
-    "stdio_streams",
-]
+
+class StdinStream(ByteReceiveStream):
+    """Wrapper for stdin that implements ByteReceiveStream interface."""
+
+    async def receive(self, max_bytes: int = 65536) -> bytes:
+        """Read bytes from stdin.
+
+        Uses read1() which returns as soon as any data is available,
+        rather than blocking until max_bytes are read.
+        """
+        loop = asyncio.get_running_loop()
+        # read1() returns immediately when any data is available (up to max_bytes)
+        # unlike read() which blocks until exactly max_bytes are read or EOF
+        stdin_buffer = sys.stdin.buffer
+        if not isinstance(stdin_buffer, io.BufferedIOBase):
+            raise TypeError(f"Unsupported stdin buffer type: {type(stdin_buffer)}")
+        data = await loop.run_in_executor(None, lambda: stdin_buffer.read1(max_bytes))
+        if not data:
+            raise anyio.EndOfStream
+        return data
+
+    async def aclose(self) -> None:
+        """Close is a no-op for stdin."""
 
 
-class _WritePipeProtocol(asyncio.BaseProtocol):
-    def __init__(self) -> None:
-        self._loop = asyncio.get_running_loop()
-        self._paused = False
-        self._drain_waiter: asyncio.Future[None] | None = None
+class StdoutStream(ByteSendStream):
+    """Wrapper for stdout that implements ByteSendStream interface."""
 
-    def pause_writing(self) -> None:
-        self._paused = True
-        if self._drain_waiter is None:
-            self._drain_waiter = self._loop.create_future()
+    async def send(self, item: bytes) -> None:
+        """Write bytes to stdout."""
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._write, item)
 
-    def resume_writing(self) -> None:
-        self._paused = False
-        if self._drain_waiter is not None and not self._drain_waiter.done():
-            self._drain_waiter.set_result(None)
-        self._drain_waiter = None
+    def _write(self, data: bytes) -> None:
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
 
-    async def _drain_helper(self) -> None:
-        if self._paused and self._drain_waiter is not None:
-            await self._drain_waiter
+    async def aclose(self) -> None:
+        """Close is a no-op for stdout."""
 
 
-def _start_stdin_feeder(loop: asyncio.AbstractEventLoop, reader: asyncio.StreamReader) -> None:
-    # Feed stdin from a background thread line-by-line
-    def blocking_read() -> None:
-        try:
-            while True:
-                data = sys.stdin.buffer.readline()
-                if not data:
-                    break
-                loop.call_soon_threadsafe(reader.feed_data, data)
-        finally:
-            loop.call_soon_threadsafe(reader.feed_eof)
+async def stdio_streams() -> tuple[StdinStream, StdoutStream]:
+    """Create stdio anyio-compatible streams (cross-platform).
 
-    import threading
-
-    threading.Thread(target=blocking_read, daemon=True).start()
-
-
-class _StdoutTransport(asyncio.BaseTransport):
-    def __init__(self) -> None:
-        self._is_closing = False
-
-    def write(self, data: bytes) -> None:
-        if self._is_closing:
-            return
-        try:
-            sys.stdout.buffer.write(data)
-            sys.stdout.buffer.flush()
-        except Exception:
-            logging.exception("Error writing to stdout")
-
-    def can_write_eof(self) -> bool:
-        return False
-
-    def is_closing(self) -> bool:
-        return self._is_closing
-
-    def close(self) -> None:
-        self._is_closing = True
-        with contextlib.suppress(Exception):
-            sys.stdout.flush()
-
-    def abort(self) -> None:
-        self.close()
-
-    def get_extra_info(self, name: str, default: Any = None) -> Any:
-        return default
-
-
-async def _windows_stdio_streams(
-    loop: asyncio.AbstractEventLoop,
-) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    reader = asyncio.StreamReader()
-    _ = asyncio.StreamReaderProtocol(reader)
-
-    _start_stdin_feeder(loop, reader)
-
-    write_protocol = _WritePipeProtocol()
-    transport = _StdoutTransport()
-    writer = asyncio.StreamWriter(
-        cast(aio_transports.WriteTransport, transport), write_protocol, None, loop
-    )
-    return reader, writer
-
-
-async def _posix_stdio_streams(
-    loop: asyncio.AbstractEventLoop,
-) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    # Reader from stdin
-    reader = asyncio.StreamReader()
-    reader_protocol = asyncio.StreamReaderProtocol(reader)
-    await loop.connect_read_pipe(lambda: reader_protocol, sys.stdin)
-
-    # Writer to stdout with protocol providing _drain_helper
-    write_protocol = _WritePipeProtocol()
-    transport, _ = await loop.connect_write_pipe(lambda: write_protocol, sys.stdout)
-    writer = asyncio.StreamWriter(transport, write_protocol, None, loop)
-    return reader, writer
-
-
-async def stdio_streams() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    """Create stdio asyncio streams.
-
-    On Windows use a thread feeder + custom stdout transport.
+    Returns (stdin, stdout) as byte stream wrappers compatible with
+    ByteReceiveStream and ByteSendStream interfaces.
     """
-    loop = asyncio.get_running_loop()
-    if platform.system() == "Windows":
-        return await _windows_stdio_streams(loop)
-    return await _posix_stdio_streams(loop)
+    return StdinStream(), StdoutStream()
 
 
 @asynccontextmanager
@@ -154,10 +83,20 @@ async def spawn_stdio_connection(
     env: Mapping[str, str] | None = None,
     cwd: str | Path | None = None,
     observers: list[StreamObserver] | None = None,
-    **transport_kwargs: Any,
-) -> AsyncIterator[tuple[Connection, aio_subprocess.Process]]:
-    """Spawn a subprocess and bind its stdio to a low-level Connection."""
-    async with spawn_stdio_transport(command, *args, env=env, cwd=cwd, **transport_kwargs) as (
+    log_stderr: bool = False,
+) -> AsyncGenerator[tuple[Connection, Process]]:
+    """Spawn a subprocess and bind its stdio to a low-level Connection.
+
+    Args:
+        handler: Method handler for the connection.
+        command: The command to execute.
+        *args: Arguments for the command.
+        env: Environment variables for the subprocess.
+        cwd: Working directory for the subprocess.
+        observers: Optional stream observers.
+        log_stderr: If True, log stderr output from the subprocess.
+    """
+    async with spawn_stdio_transport(command, *args, env=env, cwd=cwd, log_stderr=log_stderr) as (
         reader,
         writer,
         process,
@@ -176,16 +115,26 @@ async def spawn_agent_process(
     *args: str,
     env: Mapping[str, str] | None = None,
     cwd: str | Path | None = None,
-    transport_kwargs: Mapping[str, Any] | None = None,
+    log_stderr: bool = False,
     **connection_kwargs: Any,
-) -> AsyncIterator[tuple[ClientSideConnection, aio_subprocess.Process]]:
-    """Spawn an ACP agent subprocess and return a ClientSideConnection to it."""
+) -> AsyncGenerator[tuple[ClientSideConnection, Process]]:
+    """Spawn an ACP agent subprocess and return a ClientSideConnection to it.
+
+    Args:
+        to_client: Factory function that creates a Client from an Agent.
+        command: The command to execute.
+        *args: Arguments for the command.
+        env: Environment variables for the subprocess.
+        cwd: Working directory for the subprocess.
+        log_stderr: If True, log stderr output from the subprocess.
+        **connection_kwargs: Additional arguments for ClientSideConnection.
+    """
     async with spawn_stdio_transport(
         command,
         *args,
         env=env,
         cwd=cwd,
-        **(dict(transport_kwargs) if transport_kwargs else {}),
+        log_stderr=log_stderr,
     ) as (reader, writer, process):
         conn = ClientSideConnection(to_client, writer, reader, **connection_kwargs)
         try:
@@ -201,16 +150,26 @@ async def spawn_client_process(
     *args: str,
     env: Mapping[str, str] | None = None,
     cwd: str | Path | None = None,
-    transport_kwargs: Mapping[str, Any] | None = None,
+    log_stderr: bool = False,
     **connection_kwargs: Any,
-) -> AsyncIterator[tuple[AgentSideConnection, aio_subprocess.Process]]:
-    """Spawn an ACP client subprocess and return an AgentSideConnection to it."""
+) -> AsyncGenerator[tuple[AgentSideConnection, Process]]:
+    """Spawn an ACP client subprocess and return an AgentSideConnection to it.
+
+    Args:
+        to_agent: Factory function that creates an Agent from an AgentSideConnection.
+        command: The command to execute.
+        *args: Arguments for the command.
+        env: Environment variables for the subprocess.
+        cwd: Working directory for the subprocess.
+        log_stderr: If True, log stderr output from the subprocess.
+        **connection_kwargs: Additional arguments for AgentSideConnection.
+    """
     async with spawn_stdio_transport(
         command,
         *args,
         env=env,
         cwd=cwd,
-        **(dict(transport_kwargs) if transport_kwargs else {}),
+        log_stderr=log_stderr,
     ) as (reader, writer, process):
         conn = AgentSideConnection(to_agent, writer, reader, **connection_kwargs)
         try:
@@ -221,21 +180,22 @@ async def spawn_client_process(
 
 async def run_agent(
     agent: Agent | Callable[[AgentSideConnection], Agent],
-    input_stream: asyncio.StreamWriter | None = None,
-    output_stream: asyncio.StreamReader | None = None,
+    input_stream: ByteSendStream | None = None,
+    output_stream: ByteReceiveStream | None = None,
     **connection_kwargs: Any,
 ) -> None:
     """Run an ACP agent over stdio or provided streams.
 
     This is the recommended entry point for running agents. It handles stream
-    setup and connection lifecycle automatically.
+    setup and connection lifecycle automatically, and returns once the client
+    disconnects (or raises when cancelled).
 
     Args:
         agent: An Agent implementation or a factory callable that takes
             an AgentSideConnection and returns an Agent. Using a factory allows
             the agent to access the connection for client communication.
-        input_stream: Optional StreamWriter for output (defaults to stdio).
-        output_stream: Optional StreamReader for input (defaults to stdio).
+        input_stream: ByteSendStream the agent writes to (defaults to stdout).
+        output_stream: ByteReceiveStream the agent reads from (defaults to stdin).
         **connection_kwargs: Additional keyword arguments for AgentSideConnection.
 
     Example with direct agent:
@@ -261,32 +221,23 @@ async def run_agent(
         await run_agent(create_agent)
         ```
     """
+    if (input_stream is None) != (output_stream is None):
+        msg = "Pass both input_stream and output_stream, or neither to use stdio"
+        raise ValueError(msg)
     if input_stream is None or output_stream is None:
         output_stream, input_stream = await stdio_streams()
 
-    # Wrap agent instance in factory if needed
-    if callable(agent):
-        agent_factory = agent  # pyright: ignore[reportAssignmentType]
-    else:
-
-        def agent_factory(connection: AgentSideConnection) -> Agent:
-            return agent
-
-    conn = AgentSideConnection(agent_factory, input_stream, output_stream, **connection_kwargs)
+    conn = AgentSideConnection(agent, input_stream, output_stream, **connection_kwargs)
     try:
-        # Keep the connection alive
-        while True:
-            await asyncio.sleep(3600)
-    except asyncio.CancelledError:
-        pass
+        await conn.wait_closed()
     finally:
         await conn.close()
 
 
 def connect_to_agent(
     client: Client,
-    input_stream: asyncio.StreamWriter,
-    output_stream: asyncio.StreamReader,
+    input_stream: ByteSendStream,
+    output_stream: ByteReceiveStream,
     **connection_kwargs: Any,
 ) -> ClientSideConnection:
     """Create a ClientSideConnection to an ACP agent.
@@ -295,8 +246,8 @@ def connect_to_agent(
 
     Args:
         client: The client implementation.
-        input_stream: StreamWriter for sending to the agent.
-        output_stream: StreamReader for receiving from the agent.
+        input_stream: ByteSendStream for sending to the agent.
+        output_stream: ByteReceiveStream for receiving from the agent.
         **connection_kwargs: Additional keyword arguments for ClientSideConnection.
 
     Returns:

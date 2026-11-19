@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import mimetypes
 from pathlib import Path
-import shlex
 from typing import TYPE_CHECKING, Any, Literal, Required, overload
 
 from anyenv import get_os_command_provider
@@ -14,14 +11,14 @@ from fsspec.asyn import sync_wrapper
 from fsspec.spec import AbstractBufferedFile
 from upathtools.filesystems.base import BaseAsyncFileSystem, BaseUPath, FileInfo
 
-from aclientp.acp_requests import ACPRequests
-from aclientp.notifications import ACPNotifications
+from aclientp._mime import guess_type, is_binary_mime
+from aclientp.agent.acp_requests import ACPRequests
+from aclientp.agent.notifications import ACPNotifications
 
 
 class AcpInfo(FileInfo, total=False):
     """Info dict for ACP filesystem paths."""
 
-    path: str
     islink: bool
     timestamp: str | None
     permissions: str | None
@@ -34,21 +31,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# MIME types that should be treated as text
-TEXT_MIME_PREFIXES = (
-    "text/",
-    "application/json",
-    "application/xml",
-    "application/javascript",
-)
-
-
-def _is_text_mime(mime_type: str | None) -> bool:
-    """Check if a MIME type represents text content."""
-    if mime_type is None:
-        return True  # Default to text for unknown types
-    return any(mime_type.startswith(prefix) for prefix in TEXT_MIME_PREFIXES)
-
 
 class ACPFile(AbstractBufferedFile):  # type: ignore[misc]
     """File-like object for ACP filesystem operations."""
@@ -58,12 +40,14 @@ class ACPFile(AbstractBufferedFile):  # type: ignore[misc]
         super().__init__(fs, path, mode, **kwargs)
         self._content: bytes | None = None
         self.forced = False
+        self.fs = fs  # assign again here just for typing
 
     def _fetch_range(self, start: int | None, end: int | None) -> bytes:
         """Fetch byte range from file (sync wrapper)."""
         if self._content is None:
             # Run the async operation in the event loop
-            self._content = asyncio.run(self.fs._cat_file(self.path))
+            self._content = self.fs.cat_file(self.path)
+            assert self._content
 
         if start is None and end is None:
             return self._content
@@ -76,7 +60,7 @@ class ACPFile(AbstractBufferedFile):  # type: ignore[misc]
             if isinstance(content, bytes):
                 content = content.decode("utf-8")
             # Run the async operation in the event loop
-            asyncio.run(self.fs._put_file(self.path, content))
+            self.fs.put_file(self.path, content)
         return True
 
 
@@ -93,12 +77,23 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
     sep = "/"
     upath_cls = ACPPath
 
-    def __init__(self, client: Client, session_id: str, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        client: Client,
+        session_id: str,
+        *,
+        use_cli_find: bool = True,
+        **kwargs: Any,
+    ) -> None:
         """Initialize ACP filesystem.
 
         Args:
             client: ACP client for operations
             session_id: Session identifier
+            use_cli_find: Use CLI find command for _find/_glob operations.
+                When True (default), uses a single `find` command for recursive
+                file discovery, which is much more efficient over the protocol
+                barrier than walking the tree with multiple ls calls.
             **kwargs: Additional filesystem options
         """
         super().__init__(**kwargs)
@@ -107,27 +102,7 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         self.requests = ACPRequests(client, session_id)
         self.notifications = ACPNotifications(client, session_id)
         self.command_provider = get_os_command_provider()
-
-    def _parse_command(self, command_str: str) -> tuple[str, list[str]]:
-        """Parse a shell command string into command and arguments.
-
-        Args:
-            command_str: Shell command string to parse
-
-        Returns:
-            Tuple of (command, args_list)
-        """
-        try:
-            parts = shlex.split(command_str)
-            if not parts:
-                raise ValueError("Empty command string")  # noqa: TRY301
-            return parts[0], parts[1:]
-        except ValueError as e:
-            # Fallback for problematic shell strings
-            parts = command_str.split()
-            if not parts:
-                raise ValueError("Empty command string") from e
-            return parts[0], parts[1:]
+        self.use_cli_find = use_cli_find
 
     async def _cat_file(
         self, path: str, start: int | None = None, end: int | None = None, **kwargs: Any
@@ -148,13 +123,12 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
                 partial reads)
         """
         if start is not None or end is not None:
-            msg = "ACP filesystem does not support byte range reads"
-            raise NotImplementedError(msg)
+            raise NotImplementedError("ACP filesystem does not support byte range reads")
 
-        mime_type = mimetypes.guess_type(path)[0]
+        mime_type = guess_type(path)
 
-        if _is_text_mime(mime_type):
-            # Text file - use read_text_file directly
+        if not is_binary_mime(mime_type):
+            # Text (or unknown) file - use read_text_file directly
             try:
                 content = await self.requests.read_text_file(path)
                 return content.encode("utf-8")
@@ -165,38 +139,61 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         try:
             b64_cmd = self.command_provider.get_command("base64_encode")
             cmd_str = b64_cmd.create_command(path)
-            cmd, args = self._parse_command(cmd_str)
-            output, exit_code = await self.requests.run_command(cmd, args=args, timeout_seconds=30)
+            output, exit_code = await self.requests.run_command(cmd_str, timeout_seconds=30)
 
             if exit_code != 0:
-                msg = f"Could not read binary file {path}: {output}"
-                raise FileNotFoundError(msg)  # noqa: TRY301
+                raise FileNotFoundError(f"Could not read binary file {path}: {output}")  # noqa: TRY301
 
             return b64_cmd.parse_command(output)
         except Exception as e:
-            msg = f"Could not read file {path}: {e}"
-            raise FileNotFoundError(msg) from e
+            raise FileNotFoundError(f"Could not read file {path}: {e}") from e
 
-    cat_file = sync_wrapper(_cat_file)  # pyright: ignore[reportAssignmentType]
+    cat_file = sync_wrapper(_cat_file)
 
-    async def _put_file(self, path: str, content: str | bytes, **kwargs: Any) -> None:
-        """Write file content via ACP session.
+    async def _put_file(
+        self, lpath: str, rpath: str, mode: str = "overwrite", **kwargs: Any
+    ) -> None:
+        """Upload a local file to the remote ACP filesystem.
+
+        Args:
+            lpath: Local filesystem path to read from
+            rpath: Remote path to write to (protocol prefix already stripped)
+            mode: Write mode
+            **kwargs: Additional options
+        """
+        content = Path(lpath).read_bytes()
+        try:
+            await self.requests.write_text_file(rpath, content.decode("utf-8"))
+        except Exception as e:
+            raise OSError(f"Could not write {lpath} to {rpath}: {e}") from e
+
+    put_file = sync_wrapper(_put_file)
+
+    async def _pipe_file(
+        self,
+        path: str,
+        value: bytes,
+        mode: str = "overwrite",
+        **kwargs: Any,
+    ) -> None:
+        """Write bytes directly to a file path.
+
+        This is the fsspec standard method for writing data to a file.
+        Wraps _put_file for compatibility.
 
         Args:
             path: File path to write
-            content: Content to write (string or bytes)
+            value: Bytes to write
+            mode: Write mode, either 'overwrite' or 'append'
             **kwargs: Additional options
         """
-        if isinstance(content, bytes):
-            content = content.decode("utf-8")
-
+        val = value.decode() if isinstance(value, bytes) else value
         try:
-            await self.requests.write_text_file(path, content)
+            await self.requests.write_text_file(path, val)
         except Exception as e:
-            msg = f"Could not write file {path}: {e}"
-            raise OSError(msg) from e
+            raise OSError(f"Could not write file {path}: {e}") from e
 
-    put_file = sync_wrapper(_put_file)
+    pipe_file = sync_wrapper(_pipe_file)
 
     @overload
     async def _ls(self, path: str, detail: Literal[True] = ..., **kwargs: Any) -> list[AcpInfo]: ...
@@ -222,19 +219,16 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         ls_cmd = list_cmd.create_command(path)
 
         try:
-            cmd, args = self._parse_command(ls_cmd)
-            output, exit_code = await self.requests.run_command(cmd, args=args, timeout_seconds=10)
+            output, exit_code = await self.requests.run_command(ls_cmd, timeout_seconds=10)
 
             if exit_code != 0:
-                msg = f"Error listing directory {path!r}: {output}"
-                raise FileNotFoundError(msg)  # noqa: TRY301
+                raise FileNotFoundError(f"Error listing directory {path!r}: {output}")  # noqa: TRY301
 
             result = list_cmd.parse_command(output, path)
             if detail:
                 return [
                     AcpInfo(
-                        name=item.name,
-                        path=item.path,
+                        name=item.path,  # fsspec expects full path in 'name'
                         type="file" if item.type == "link" else item.type,
                         size=item.size,
                         islink=item.type == "link",
@@ -243,11 +237,10 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
                     )
                     for item in result
                 ]
-            return [item.name for item in result]
+            return [item.path for item in result]  # Return full paths for consistency
 
         except Exception as e:
-            msg = f"Could not list directory {path}: {e}"
-            raise FileNotFoundError(msg) from e
+            raise FileNotFoundError(f"Could not list directory {path}: {e}") from e
 
     ls = sync_wrapper(_ls)
 
@@ -265,15 +258,13 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         stat_cmd = info_cmd.create_command(path)
 
         try:
-            cmd, args = self._parse_command(stat_cmd)
-            output, exit_code = await self.requests.run_command(cmd, args=args, timeout_seconds=5)
+            output, exit_code = await self.requests.run_command(stat_cmd, timeout_seconds=5)
 
             if exit_code != 0:
                 raise FileNotFoundError(f"File not found: {path}")
             file_info = info_cmd.parse_command(output.strip(), path)
             return AcpInfo(
-                name=file_info.name,
-                path=file_info.path,
+                name=file_info.path,
                 type="file" if file_info.type == "link" else file_info.type,
                 size=file_info.size,
                 islink=file_info.type == "link",
@@ -288,10 +279,9 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
                 filename = Path(path).name
 
                 for item in ls_result:
-                    if item["name"] == filename:
+                    if Path(item["name"]).name == filename:
                         return AcpInfo(
-                            name=item["name"],
-                            path=path,
+                            name=path,  # fsspec expects full path in 'name'
                             type=item["type"],
                             size=item["size"],
                             islink=item.get("islink", False),
@@ -301,8 +291,7 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
 
                 raise FileNotFoundError(f"File not found: {path}")
             except (OSError, ValueError):
-                msg = f"Could not get file info for {path}: {e}"
-                raise FileNotFoundError(msg) from e
+                raise FileNotFoundError(f"Could not get file info for {path}: {e}") from e
 
     info = sync_wrapper(_info)
 
@@ -320,14 +309,13 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         test_cmd = exists_cmd.create_command(path)
 
         try:
-            cmd, args = self._parse_command(test_cmd)
-            output, exit_code = await self.requests.run_command(cmd, args=args, timeout_seconds=5)
+            output, exit_code = await self.requests.run_command(test_cmd, timeout_seconds=5)
         except (OSError, ValueError):
             return False
         else:
             return exists_cmd.parse_command(output, exit_code if exit_code is not None else 1)
 
-    exists = sync_wrapper(_exists)  # pyright: ignore[reportAssignmentType]
+    exists = sync_wrapper(_exists)
 
     async def _isdir(self, path: str, **kwargs: Any) -> bool:
         """Check if path is a directory via test command.
@@ -343,8 +331,7 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         test_cmd = isdir_cmd.create_command(path)
 
         try:
-            cmd, args = self._parse_command(test_cmd)
-            output, exit_code = await self.requests.run_command(cmd, args=args, timeout_seconds=5)
+            output, exit_code = await self.requests.run_command(test_cmd, timeout_seconds=5)
         except (OSError, ValueError):
             return False
         else:
@@ -366,8 +353,7 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         test_cmd = isfile_cmd.create_command(path)
 
         try:
-            cmd, args = self._parse_command(test_cmd)
-            output, exit_code = await self.requests.run_command(cmd, args=args, timeout_seconds=5)
+            output, exit_code = await self.requests.run_command(test_cmd, timeout_seconds=5)
         except (OSError, ValueError):
             return False
         else:
@@ -387,48 +373,181 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         mkdir_cmd = create_cmd.create_command(path, parents=exist_ok)
 
         try:
-            cmd, args = self._parse_command(mkdir_cmd)
-            output, exit_code = await self.requests.run_command(cmd, args=args, timeout_seconds=5)
+            output, exit_code = await self.requests.run_command(mkdir_cmd, timeout_seconds=5)
             success = create_cmd.parse_command(output, exit_code if exit_code is not None else 1)
             if not success:
-                msg = f"Error creating directory {path}: {output}"
-                raise OSError(msg)  # noqa: TRY301
+                raise OSError(f"Error creating directory {path}: {output}")  # noqa: TRY301
         except Exception as e:
-            msg = f"Could not create directory {path}: {e}"
-            raise OSError(msg) from e
+            raise OSError(f"Could not create directory {path}: {e}") from e
 
     makedirs = sync_wrapper(_makedirs)
 
-    async def _rm(self, path: str, recursive: bool = False, **kwargs: Any) -> None:
+    async def _cp_file(self, path1: str, path2: str, **kwargs: Any) -> None:
+        """Copy a file from path1 to path2.
+
+        Uses CLI cp/copy command for efficiency - single round-trip and
+        native binary file support without base64 encoding overhead.
+
+        Args:
+            path1: Source file path
+            path2: Destination file path
+            **kwargs: Additional options
+        """
+        copy_cmd = self.command_provider.get_command("copy_path")
+        cmd_str = copy_cmd.create_command(path1, path2, recursive=False)
+
+        try:
+            output, exit_code = await self.requests.run_command(cmd_str, timeout_seconds=30)
+            success = copy_cmd.parse_command(output, exit_code if exit_code is not None else 1)
+            if not success:
+                raise OSError(f"Error copying {path1} to {path2}: {output}")  # noqa: TRY301
+        except Exception as e:
+            raise OSError(f"Could not copy {path1} to {path2}: {e}") from e
+
+    cp_file = sync_wrapper(_cp_file)
+
+    async def _rm(
+        self,
+        path: str,
+        recursive: bool = False,
+        batch_size: int | None = None,
+        maxdepth: int | None = None,
+        **kwargs: Any,
+    ) -> None:
         """Remove file or directory via rm command.
 
         Args:
             path: Path to remove
             recursive: Remove directories recursively
+            batch_size: Batch size when removing directories (recursively)
+            maxdepth: Maximum recursion depth (not supported by the remote rm command)
             **kwargs: Additional options
         """
+        if recursive and maxdepth is not None:
+            raise NotImplementedError("Depth-limited recursive removal is not supported")
         remove_cmd = self.command_provider.get_command("remove_path")
         rm_cmd = remove_cmd.create_command(path, recursive=recursive)
 
         try:
-            cmd, args = self._parse_command(rm_cmd)
-            output, exit_code = await self.requests.run_command(cmd, args=args, timeout_seconds=10)
+            output, exit_code = await self.requests.run_command(rm_cmd, timeout_seconds=10)
             success = remove_cmd.parse_command(output, exit_code if exit_code is not None else 1)
             if not success:
-                msg = f"Error removing {path}: {output}"
-                raise OSError(msg)  # noqa: TRY301
+                raise OSError(f"Error removing {path}: {output}")  # noqa: TRY301
         except Exception as e:
-            msg = f"Could not remove {path}: {e}"
-            raise OSError(msg) from e
+            raise OSError(f"Could not remove {path}: {e}") from e
 
     rm = sync_wrapper(_rm)
 
-    def open(self, path: str, mode: str = "rb", **kwargs: Any) -> ACPFile:
+    @overload
+    async def _find(
+        self,
+        path: str,
+        maxdepth: int | None = None,
+        withdirs: bool = False,
+        *,
+        detail: Literal[False] = False,
+        **kwargs: Any,
+    ) -> list[str]: ...
+
+    @overload
+    async def _find(
+        self,
+        path: str,
+        maxdepth: int | None = None,
+        withdirs: bool = False,
+        *,
+        detail: Literal[True],
+        **kwargs: Any,
+    ) -> dict[str, AcpInfo]: ...
+
+    async def _find(
+        self,
+        path: str,
+        maxdepth: int | None = None,
+        withdirs: bool = False,
+        **kwargs: Any,
+    ) -> list[str] | dict[str, AcpInfo]:
+        """Find files recursively.
+
+        When use_cli_find is enabled, uses a single CLI find command instead of
+        walking the directory tree with multiple ls calls. This is much more
+        efficient over the protocol barrier.
+
+        Args:
+            path: Root path to search from
+            maxdepth: Maximum depth to descend (None for unlimited)
+            withdirs: Include directories in results
+            **kwargs: Additional options (detail=True returns dict with info)
+
+        Returns:
+            List of paths, or dict mapping paths to info if detail=True
+        """
+        if not self.use_cli_find:
+            # Fall back to default fsspec implementation (walks tree with _ls)
+            return await super()._find(path, maxdepth=maxdepth, withdirs=withdirs, **kwargs)  # type: ignore[no-any-return]
+
+        detail = kwargs.get("detail", False)
+        stripped = self._strip_protocol(path)
+        search_path = stripped if isinstance(stripped, str) else stripped[0]
+
+        # Determine file_type filter
+        file_type: Literal["file", "directory", "all"] = "all" if withdirs else "file"
+
+        # Use anyenv find command
+        find_cmd = self.command_provider.get_command("find")
+        cmd_str = find_cmd.create_command(
+            search_path, maxdepth=maxdepth, file_type=file_type, with_stats=detail
+        )
+
+        try:
+            output, exit_code = await self.requests.run_command(cmd_str, timeout_seconds=60)
+
+            if exit_code != 0:
+                # If find fails, fall back to default implementation
+                logger.warning("CLI find failed, falling back to walk: %s", output)
+                return await super()._find(path, maxdepth=maxdepth, withdirs=withdirs, **kwargs)  # type: ignore[no-any-return]
+
+            entries = find_cmd.parse_command(output, search_path)
+
+            if detail:
+                # Return dict with info from find output
+                return {
+                    entry.path: AcpInfo(
+                        name=entry.path,
+                        type="file" if entry.type == "link" else entry.type,
+                        size=entry.size,
+                        islink=entry.type == "link",
+                        timestamp=entry.timestamp,
+                        permissions=entry.permissions,
+                    )
+                    for entry in entries
+                    if entry.name not in (".", "..")
+                }
+            return [entry.path for entry in entries if entry.name not in (".", "..")]
+
+        except Exception as e:  # noqa: BLE001
+            logger.warning("CLI find error, falling back to walk: %s", e)
+            return await super()._find(path, maxdepth=maxdepth, withdirs=withdirs, **kwargs)  # type: ignore[no-any-return]
+
+    find = sync_wrapper(_find)  # pyright: ignore[reportAssignmentType]
+
+    def open(
+        self,
+        path: str,
+        mode: str = "rb",
+        block_size: int | None = None,
+        cache_options: dict[str, Any] | None = None,
+        compression: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> ACPFile:
         """Open file for reading or writing.
 
         Args:
             path: File path to open
             mode: File mode ('rb', 'wb', 'ab', 'xb')
+            block_size: Block size for reading/writing
+            cache_options: Cache options for reading/writing
+            compression: Compression options for reading/writing
             **kwargs: Additional options
 
         Returns:

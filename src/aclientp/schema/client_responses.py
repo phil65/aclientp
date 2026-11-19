@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Any, Self
 
 from aclientp.schema.base import Response
+from aclientp.schema.elicitation import ElicitationResponse
+from aclientp.schema.mcp import MessageMcpResponse
 from aclientp.schema.terminal import TerminalExitStatus  # noqa: TC001
-from aclientp.schema.tool_call import AllowedOutcome, DeniedOutcome
+from aclientp.schema.tool_call import AllowedOutcome, DeniedOutcome, RequestPermissionOutcome
 
 
 # terminal
@@ -19,8 +21,8 @@ class CreateTerminalResponse(Response):
     """The unique identifier for the created terminal."""
 
 
-class KillTerminalCommandResponse(Response):
-    """Response to terminal/kill command method."""
+class KillTerminalResponse(Response):
+    """Response to the ``terminal/kill`` method."""
 
 
 class ReleaseTerminalResponse(Response):
@@ -70,18 +72,18 @@ class ReadTextFileResponse(Response):
 class RequestPermissionResponse(Response):
     """Response to a permission request."""
 
-    outcome: DeniedOutcome | AllowedOutcome
+    outcome: RequestPermissionOutcome
     """The user's decision on the permission request."""
 
     @classmethod
-    def denied(cls) -> Self:
+    def denied(cls, metadata: dict[str, Any] | None = None) -> Self:
         """Create a response indicating that the permission request was denied."""
-        return cls(outcome=DeniedOutcome())
+        return cls(outcome=DeniedOutcome(), field_meta=metadata)
 
     @classmethod
-    def allowed(cls, option_id: str) -> Self:
+    def allowed(cls, option_id: str, metadata: dict[str, Any] | None = None) -> Self:
         """Create a response indicating that the permission request was allowed."""
-        return cls(outcome=AllowedOutcome(option_id=option_id))
+        return cls(outcome=AllowedOutcome(option_id=option_id), field_meta=metadata)
 
 
 ClientResponse = (
@@ -92,5 +94,7 @@ ClientResponse = (
     | TerminalOutputResponse
     | ReleaseTerminalResponse
     | WaitForTerminalExitResponse
-    | KillTerminalCommandResponse
+    | KillTerminalResponse
+    | ElicitationResponse
+    | MessageMcpResponse
 )

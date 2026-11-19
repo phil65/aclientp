@@ -5,9 +5,10 @@ ACP protocol server with FastAPI web interface for testing.
 """
 
 import argparse
-import asyncio
 import logging
 import sys
+
+import anyio
 
 
 def main() -> None:
@@ -27,7 +28,7 @@ Examples:
   python -m aclientp.cli --host 0.0.0.0 --port 8080
 
   # Test ACP connection
-  echo '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":1},"id":1}' | python -m acp
+  echo '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":1},"id":1}' | python -m aclientp
 
   # Open web interface at http://localhost:8000 to manually send notifications
         """,  # noqa: E501
@@ -50,7 +51,7 @@ Examples:
         default="info",
         help="Logging level (default: info)",
     )
-    from aclientp.debug_server.debug_server import ACPDebugServer
+    from aclientp.agent.implementations.debug_server.debug_server import ACPDebugServer
 
     args = parser.parse_args()
 
@@ -66,7 +67,7 @@ Examples:
     server = ACPDebugServer(fastapi_port=args.port, fastapi_host=args.host)
 
     try:
-        asyncio.run(server.run())
+        anyio.run(server.run)
     except KeyboardInterrupt:
         print("\nDebug server interrupted", file=sys.stderr)
     except Exception as e:  # noqa: BLE001

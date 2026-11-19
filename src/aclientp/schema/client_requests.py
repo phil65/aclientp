@@ -3,15 +3,77 @@
 from __future__ import annotations
 
 from collections.abc import Sequence  # noqa: TC003
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import Field
 
-from aclientp.schema.base import Request
-from aclientp.schema.capabilities import ClientCapabilities, FileSystemCapability
+from aclientp.schema.base import AnnotatedObject, Request
+from aclientp.schema.capabilities import (
+    AuthCapabilities,
+    ClientCapabilities,
+    ClientSessionCapabilities,
+    CompactionCapabilities,
+    FileSystemCapabilities,
+    NoticeCapabilities,
+    PromptSuggestionsCapabilities,
+)
 from aclientp.schema.common import Implementation
+from aclientp.schema.config_options import InitialSessionConfigOption  # noqa: TC001
 from aclientp.schema.content_blocks import ContentBlock  # noqa: TC001
-from aclientp.schema.mcp import McpServer  # noqa: TC001
+from aclientp.schema.mcp import McpServer, MessageMcpRequest
+from aclientp.schema.providers import (
+    DisableProviderRequest,
+    ListProvidersRequest,
+    SetProviderRequest,
+)
+from aclientp.schema.session_state import SessionArchiveFilter  # noqa: TC001
+
+
+SystemPromptMode = Literal["append", "override"] | str
+"""How the Agent combines a client-provided system prompt with its own instructions.
+
+- ``append``: Add the content to the Agent's own instructions.
+- ``override``: Replace the Agent's built-in default instructions
+  (requires ``session_capabilities.system_prompt.mode.override``).
+"""
+
+
+class SystemPrompt(AnnotatedObject):
+    """Client-provided system-level instructions for a session.
+
+    Only allowed if the Agent advertises ``session_capabilities.system_prompt``.
+    """
+
+    mode: SystemPromptMode
+    """How the Agent combines ``content`` with its own instructions."""
+
+    content: Sequence[ContentBlock]
+    """The system prompt content."""
+
+
+class SessionSetupRequest(Request):
+    """Fields shared by the session lifecycle requests (new, load, resume, fork)."""
+
+    cwd: str
+    """The working directory for this session. Must be an absolute path."""
+
+    additional_directories: Sequence[str] = Field(default_factory=list)
+    """Additional workspace roots for this session. Each path must be absolute.
+
+    Requires the ``session_capabilities.additional_directories`` capability.
+    """
+
+    mcp_servers: Sequence[McpServer] = Field(default_factory=list)
+    """List of MCP (Model Context Protocol) servers the agent should connect to."""
+
+    system_prompt: SystemPrompt | None = None
+    """System-level instructions for the session.
+
+    Requires the ``session_capabilities.system_prompt`` capability.
+    """
+
+    config_options: Sequence[InitialSessionConfigOption] = Field(default_factory=list)
+    """**UNSTABLE**: Config option values to apply when the session is set up."""
 
 
 class CustomRequest(Request):
@@ -24,20 +86,14 @@ class CustomRequest(Request):
     """The method parameters."""
 
 
-class NewSessionRequest(Request):
+class NewSessionRequest(SessionSetupRequest):
     """Request parameters for creating a new session.
 
     See protocol docs: [Creating a Session](https://agentclientprotocol.com/protocol/session-setup#creating-a-session)
     """
 
-    cwd: str
-    """The working directory for this session. Must be an absolute path."""
 
-    mcp_servers: Sequence[McpServer]
-    """List of MCP (Model Context Protocol) servers the agent should connect to."""
-
-
-class LoadSessionRequest(Request):
+class LoadSessionRequest(SessionSetupRequest):
     """Request parameters for loading an existing session.
 
     Only available if the Agent supports the `loadSession` capability.
@@ -45,22 +101,14 @@ class LoadSessionRequest(Request):
     See protocol docs: [Loading Sessions](https://agentclientprotocol.com/protocol/session-setup#loading-sessions)
     """
 
-    cwd: str
-    """The working directory for this session."""
-
-    mcp_servers: Sequence[McpServer]
-    """List of MCP servers to connect to for this session."""
-
     session_id: str
     """The ID of the session to load."""
 
 
 class ListSessionsRequest(Request):
-    """**UNSTABLE**: This capability is not part of the spec yet.
+    """Request parameters for listing existing sessions.
 
-    Request parameters for listing existing sessions.
-
-    Only available if the Agent supports the `listSessions` capability.
+    Only available if the Agent supports the `session.list` capability.
     """
 
     cursor: str | None = None
@@ -69,14 +117,14 @@ class ListSessionsRequest(Request):
     cwd: str | None = None
     """Filter sessions by working directory. Must be an absolute path."""
 
+    archived: SessionArchiveFilter | None = None
+    """**UNSTABLE**: Which sessions to return by archive state. Defaults to ``exclude``."""
 
-class ForkSessionRequest(Request):
-    """**UNSTABLE**: This capability is not part of the spec yet.
 
-    Request parameters for forking an existing session.
+class ForkSessionRequest(SessionSetupRequest):
+    """**UNSTABLE**: Request parameters for forking an existing session.
 
-    Creates a new session based on the context of an existing one, allowing
-    operations like generating summaries without affecting the original session's history.
+    Creates a new, active session based on the context of an existing one.
 
     Only available if the Agent supports the `session.fork` capability.
     """
@@ -84,32 +132,95 @@ class ForkSessionRequest(Request):
     session_id: str
     """The ID of the session to fork."""
 
-    cwd: str
-    """The working directory for the new session."""
+    cursor_id: str | None = None
+    """**UNSTABLE**: Fork at this session cursor instead of the end of the session.
 
-    mcp_servers: Sequence[McpServer] = Field(default_factory=list)
-    """List of MCP servers to connect to for this session."""
+    The new session's history is the source history before the cursor. Only IDs of
+    cursors announced on the source session that currently advertise
+    ``capabilities.fork`` are valid; Agents reject others with ``-32602``.
+    """
 
 
-class ResumeSessionRequest(Request):
-    """**UNSTABLE**: This capability is not part of the spec yet.
-
-    Request parameters for resuming an existing session.
+class ResumeSessionRequest(SessionSetupRequest):
+    """Request parameters for resuming an existing session.
 
     Resumes an existing session without returning previous messages (unlike `session/load`).
-    This is useful for agents that can resume sessions but don't implement full session loading.
+    ``mcp_servers`` is the complete client-provided set.
 
     Only available if the Agent supports the `session.resume` capability.
     """
 
-    cwd: str
-    """The working directory for this session."""
-
-    mcp_servers: Sequence[McpServer] = Field(default_factory=list)
-    """List of MCP servers to connect to for this session."""
-
     session_id: str
     """The ID of the session to resume."""
+
+
+class DeleteSessionRequest(Request):
+    """Request parameters for deleting a session from ``session/list``.
+
+    Only available if the Agent supports the ``session.delete`` capability.
+    """
+
+    session_id: str
+    """The ID of the session to delete."""
+
+
+class ArchiveSessionRequest(Request):
+    """**UNSTABLE**: Request parameters for archiving a session.
+
+    Only available if the Agent supports the ``session.archive`` capability.
+    """
+
+    session_id: str
+    """The ID of the session to archive."""
+
+
+class UnarchiveSessionRequest(Request):
+    """**UNSTABLE**: Request parameters for unarchiving a session.
+
+    Only available if the Agent supports the ``session.archive`` capability.
+    """
+
+    session_id: str
+    """The ID of the session to unarchive."""
+
+
+class SessionStatusRequest(Request):
+    """**UNSTABLE**: Request parameters for checking whether the Agent has a session in memory.
+
+    Only available if the Agent supports the ``session.status`` capability.
+    """
+
+    session_id: str
+    """The ID of the session to check."""
+
+
+class SessionOptionsRequest(Request):
+    """**UNSTABLE**: Request the modes and config options a session would start with.
+
+    Only available if the Agent supports the ``session.options`` capability.
+    """
+
+    cwd: str
+    """The working directory to resolve options for. Must be an absolute path."""
+
+    additional_directories: Sequence[str] = Field(default_factory=list)
+    """Additional workspace roots to resolve options for. Each path must be absolute."""
+
+    session_id: str | None = None
+    """The session to resolve options for."""
+
+
+class SetSessionTitleRequest(Request):
+    """**UNSTABLE**: Request parameters for renaming a session.
+
+    Only available if the Agent supports the ``session.title`` capability.
+    """
+
+    session_id: str
+    """The ID of the session to retitle."""
+
+    title: str
+    """The new title for the session."""
 
 
 class SetSessionModeRequest(Request):
@@ -151,17 +262,27 @@ class PromptRequest(Request):
     """The ID of the session to send this user message to."""
 
 
-class SetSessionModelRequest(Request):
-    """**UNSTABLE**: This capability is not part of the spec yet.
+class SetSessionConfigOptionRequest(Request):
+    """Request parameters for setting a session configuration option.
 
-    Request parameters for setting a session model.
+    Supports both select (string value ID) and boolean config options.
+    When ``type`` is ``"boolean"``, ``value`` is a bool.
+    When ``type`` is absent or ``"value_id"``, ``value`` is a string.
+
+    See protocol docs: [Session Config Options](https://agentclientprotocol.com/protocol/session-config-options)
     """
 
-    model_id: str
-    """The ID of the model to set."""
+    config_id: str
+    """The ID of the configuration option to set."""
 
     session_id: str
-    """The ID of the session to set the model for."""
+    """The ID of the session to set the config option for."""
+
+    type: str | None = None
+    """The value type discriminator. ``"boolean"`` for bool values, absent for string value IDs."""
+
+    value: str | bool
+    """The value to set. String for select options, bool for boolean options."""
 
 
 class InitializeRequest(Request):
@@ -194,16 +315,73 @@ class InitializeRequest(Request):
         read_text_file: bool = True,
         write_text_file: bool = True,
         protocol_version: int = 1,
+        terminal_auth: bool = False,
+        prompt_suggestions: bool = False,
+        compaction: bool = False,
+        notices: bool = False,
+        metadata: dict[str, Any] | None = None,
     ) -> Self:
         """Create a new InitializeRequest instance."""
-        fs = FileSystemCapability(read_text_file=read_text_file, write_text_file=write_text_file)
-        caps = ClientCapabilities(terminal=terminal, fs=fs)
+        fs = FileSystemCapabilities(read_text_file=read_text_file, write_text_file=write_text_file)
+        auth = AuthCapabilities(terminal=terminal_auth) if terminal_auth else None
+        session = ClientSessionCapabilities(
+            prompt_suggestions=PromptSuggestionsCapabilities() if prompt_suggestions else None,
+            compaction=CompactionCapabilities() if compaction else None,
+            notices=NoticeCapabilities() if notices else None,
+        )
+        caps = ClientCapabilities(terminal=terminal, fs=fs, auth=auth, session=session)
         impl = Implementation(title=title, name=name, version=version)
         return cls(
             client_capabilities=caps,
             client_info=impl,
             protocol_version=protocol_version,
+            field_meta=metadata,
         )
+
+    @classmethod
+    def create_for_package(
+        cls,
+        package_name: str,
+        allow_terminal: bool = True,
+        allow_file_operations: bool = True,
+        terminal_auth: bool = False,
+        prompt_suggestions: bool = False,
+        compaction: bool = False,
+        notices: bool = False,
+        metadata: dict[str, Any] | None = None,
+    ) -> InitializeRequest:
+        """Create ACP initialize request for app with given name (based on pkg metadata)."""
+        from importlib.metadata import metadata as _metadata
+
+        pkg_meta = _metadata(package_name)
+        return cls.create(
+            title=pkg_meta["Name"],
+            version=pkg_meta["Version"],
+            name=package_name,
+            protocol_version=1,
+            terminal=allow_terminal,
+            read_text_file=allow_file_operations,
+            write_text_file=allow_file_operations,
+            terminal_auth=terminal_auth,
+            prompt_suggestions=prompt_suggestions,
+            compaction=compaction,
+            notices=notices,
+            metadata=metadata,
+        )
+
+
+class CloseSessionRequest(Request):
+    """Request parameters for closing an active session.
+
+    The agent **must** cancel any ongoing work related to the session
+    (treat it as if ``session/cancel`` was called) and then free up any resources
+    associated with the session.
+
+    Only available if the Agent supports the ``session.close`` capability.
+    """
+
+    session_id: str
+    """The ID of the session to close."""
 
 
 class AuthenticateRequest(Request):
@@ -219,16 +397,46 @@ class AuthenticateRequest(Request):
     """
 
 
+class LogoutRequest(Request):
+    """Request parameters for the logout method.
+
+    Terminates the current authenticated session.
+
+    After a successful logout, all new sessions will require authentication.
+    There is no guarantee about the behavior of already running sessions.
+    """
+
+
+class AuthStatusRequest(Request):
+    """**UNSTABLE**: Request the agent's current authentication state.
+
+    Only available if the Agent supports the ``auth.status`` capability.
+    """
+
+
 ClientRequest = (
     InitializeRequest
     | AuthenticateRequest
+    | LogoutRequest
+    | AuthStatusRequest
     | NewSessionRequest
     | LoadSessionRequest
     | ListSessionsRequest
+    | DeleteSessionRequest
+    | ArchiveSessionRequest
+    | UnarchiveSessionRequest
+    | SessionStatusRequest
+    | SessionOptionsRequest
+    | SetSessionTitleRequest
     | ForkSessionRequest
     | ResumeSessionRequest
+    | CloseSessionRequest
     | SetSessionModeRequest
+    | SetSessionConfigOptionRequest
     | PromptRequest
-    | SetSessionModelRequest
+    | ListProvidersRequest
+    | SetProviderRequest
+    | DisableProviderRequest
+    | MessageMcpRequest
     | CustomRequest
 )

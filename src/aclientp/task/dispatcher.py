@@ -5,31 +5,28 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
-from aclientp.task import RpcTaskKind
+from aclientp.exceptions import RequestError
+from aclientp.task.queue import InMemoryMessageQueue
+from aclientp.task.state import InMemoryMessageStateStore
 
 
 if TYPE_CHECKING:
+    from aclientp.task import RpcTask
     from aclientp.task.queue import MessageQueue
     from aclientp.task.state import MessageStateStore
     from aclientp.task.supervisor import TaskSupervisor
 
 
-RequestRunner = Callable[[dict[str, Any]], Awaitable[Any]]
-NotificationRunner = Callable[[dict[str, Any]], Awaitable[None]]
+RequestRunner = Callable[["RpcTask"], Awaitable[dict[str, Any]]]
+"""Handles a request and returns the JSON-RPC response payload that was sent."""
+NotificationRunner = Callable[["RpcTask"], Awaitable[None]]
 
 
 class MessageDispatcher(Protocol):
     """Protocol for message dispatchers."""
-
-    def start(self) -> None: ...
-
-    async def stop(self) -> None: ...
-
-
-class DefaultMessageDispatcher(MessageDispatcher):
-    """Background worker that consumes RPC tasks from a broker."""
 
     def __init__(
         self,
@@ -39,55 +36,72 @@ class DefaultMessageDispatcher(MessageDispatcher):
         store: MessageStateStore,
         request_runner: RequestRunner,
         notification_runner: NotificationRunner,
-    ) -> None:
-        self._queue = queue
-        self._supervisor = supervisor
-        self._store = store
-        self._request_runner = request_runner
-        self._notification_runner = notification_runner
+    ) -> None: ...
+
+    def start(self) -> None: ...
+
+    async def stop(self) -> None: ...
+
+
+@dataclass(kw_only=True)
+class DefaultMessageDispatcher(MessageDispatcher):
+    """Background worker that consumes RPC tasks from a broker.
+
+    Every message is handled in its own task, so a slow handler never blocks the
+    others; tasks are started in the order the messages were received.
+    """
+
+    supervisor: TaskSupervisor
+    request_runner: RequestRunner
+    notification_runner: NotificationRunner
+    queue: MessageQueue = field(default_factory=InMemoryMessageQueue)
+    store: MessageStateStore = field(default_factory=InMemoryMessageStateStore)
+
+    def __post_init__(self) -> None:
         self._task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
         if self._task is not None:
             raise RuntimeError("dispatcher already started")
-        self._task = self._supervisor.create(self._run(), name="aclientp.Dispatcher.loop")
+        self._task = self.supervisor.create(self._run(), name="acp.Dispatcher.loop")
 
     async def _run(self) -> None:
         try:
-            async for task in self._queue:
+            async for task in self.queue:
                 try:
-                    if task.kind is RpcTaskKind.REQUEST:
-                        await self._dispatch_request(task.message)
+                    if self.supervisor.closed:
+                        continue  # Connection is shutting down, drain without handling
+                    if task.kind == "request":
+                        self._dispatch_request(task)
                     else:
-                        await self._dispatch_notification(task.message)
+                        self._dispatch_notification(task)
                 finally:
-                    self._queue.task_done()
+                    self.queue.task_done()
         except asyncio.CancelledError:
             return
 
     async def stop(self) -> None:
-        await self._queue.close()
+        await self.queue.close()
         if self._task is not None:
             with suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
 
-    async def _dispatch_request(self, msg: dict[str, Any]) -> None:
-        record = self._store.begin_incoming(msg.get("method", ""), msg.get("params"))
+    def _dispatch_request(self, task: RpcTask) -> None:
+        msg = task.message
+        record = self.store.begin_incoming(msg.get("method", ""), msg.get("params"))
 
         async def runner() -> None:
-            try:
-                result = await self._request_runner(msg)
-            except Exception as exc:
-                self._store.fail_incoming(record, exc)
-                raise
+            response = await self.request_runner(task)
+            if "error" in response:
+                self.store.fail_incoming(record, RequestError.from_error_obj(response["error"]))
             else:
-                self._store.complete_incoming(record, result)
+                self.store.complete_incoming(record, response.get("result"))
 
-        self._supervisor.create(runner(), name="aclientp.Dispatcher.request")
+        self.supervisor.create(runner(), name="acp.Dispatcher.request")
 
-    async def _dispatch_notification(self, message: dict[str, Any]) -> None:
+    def _dispatch_notification(self, task: RpcTask) -> None:
         async def runner() -> None:
-            await self._notification_runner(message)
+            await self.notification_runner(task)
 
-        self._supervisor.create(runner(), name="aclientp.Dispatcher.notification")
+        self.supervisor.create(runner(), name="acp.Dispatcher.notification")

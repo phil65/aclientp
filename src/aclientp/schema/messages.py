@@ -6,32 +6,53 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from aclientp.schema.agent_requests import AgentRequest  # noqa: TC001
-from aclientp.schema.agent_responses import AgentResponse  # noqa: TC001
+from aclientp.schema.agent_requests import AgentRequest
+from aclientp.schema.agent_responses import AgentResponse
 from aclientp.schema.base import Schema
-from aclientp.schema.client_requests import ClientRequest  # noqa: TC001
-from aclientp.schema.client_responses import ClientResponse  # noqa: TC001
-from aclientp.schema.common import Error  # noqa: TC001
-from aclientp.schema.notifications import (  # noqa: TC001
+from aclientp.schema.client_requests import ClientRequest
+from aclientp.schema.client_responses import ClientResponse
+from aclientp.schema.common import Error
+from aclientp.schema.notifications import (
     CancelNotification,
     SessionNotification,
 )
 
 
 AgentMethod = Literal[
+    "auth/status",
     "authenticate",
     "initialize",
+    "logout",
+    "mcp/message",
+    "providers/disable",
+    "providers/list",
+    "providers/set",
+    "session/archive",
     "session/cancel",
+    "session/close",
+    "session/delete",
+    "session/fork",
+    "session/list",
     "session/load",
     "session/new",
+    "session/options",
     "session/prompt",
+    "session/resume",
+    "session/set_config_option",
     "session/set_mode",
-    "session/set_model",
+    "session/set_title",
+    "session/status",
+    "session/unarchive",
 ]
+"""Methods handled by the agent."""
 
 ClientMethod = Literal[
+    "auth/status_update",
+    "elicitation/complete",
+    "elicitation/create",
     "fs/read_text_file",
     "fs/write_text_file",
+    "mcp/message",
     "session/request_permission",
     "session/update",
     "terminal/create",
@@ -40,6 +61,13 @@ ClientMethod = Literal[
     "terminal/release",
     "terminal/wait_for_exit",
 ]
+"""Methods handled by the client."""
+
+ProtocolMethod = Literal["$/cancel_request"]
+"""Methods either side may send."""
+
+ProxyMethod = Literal["proxy/initialize", "proxy/successor"]
+"""**UNSTABLE**: Methods handled by proxies in a proxy chain."""
 
 
 class JsonRPCMessage(Schema):
@@ -110,8 +138,8 @@ class ClientRequestMessage(JsonRPCMessage):
     [1]: https://www.jsonrpc.org/specification#compatibility
     """
 
-    id: int | str | None = None
-    """JSON RPC Request Id."""
+    id: int | str | None
+    """JSON RPC Request Id. Required on requests; ``null`` is allowed but discouraged."""
 
     method: ClientMethod | str
     """Method name."""
@@ -128,8 +156,8 @@ class AgentRequestMessage(JsonRPCMessage):
     [1]: https://www.jsonrpc.org/specification#compatibility
     """
 
-    id: int | str | None = None
-    """JSON RPC Request Id."""
+    id: int | str | None
+    """JSON RPC Request Id. Required on requests; ``null`` is allowed but discouraged."""
 
     method: AgentMethod | str
     """Method name."""

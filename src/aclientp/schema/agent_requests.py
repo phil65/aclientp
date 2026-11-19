@@ -6,7 +6,9 @@ from pydantic import Field
 
 from aclientp.schema.base import Request
 from aclientp.schema.common import EnvVariable  # noqa: TC001
-from aclientp.schema.tool_call import PermissionOption, ToolCall  # noqa: TC001
+from aclientp.schema.elicitation import ElicitationRequest
+from aclientp.schema.mcp import MessageMcpRequest
+from aclientp.schema.tool_call import PermissionOption, ToolCallUpdate  # noqa: TC001
 
 
 class BaseAgentRequest(Request):
@@ -85,7 +87,7 @@ class CreateTerminalRequest(BaseAgentRequest):
     specified limit."""
 
 
-class KillTerminalCommandRequest(BaseAgentRequest):
+class KillTerminalRequest(BaseAgentRequest):
     """Request to kill a terminal command without releasing the terminal."""
 
     terminal_id: str
@@ -110,7 +112,7 @@ class RequestPermissionRequest(BaseAgentRequest):
     options: Sequence[PermissionOption]
     """Available permission options for the user to choose from."""
 
-    tool_call: ToolCall
+    tool_call: ToolCallUpdate
     """Details about the tool call requiring permission."""
 
 
@@ -122,5 +124,7 @@ AgentRequest = (
     | TerminalOutputRequest
     | ReleaseTerminalRequest
     | WaitForTerminalExitRequest
-    | KillTerminalCommandRequest
+    | KillTerminalRequest
+    | ElicitationRequest
+    | MessageMcpRequest
 )

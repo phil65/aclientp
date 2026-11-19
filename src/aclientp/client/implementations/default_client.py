@@ -9,14 +9,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from llmling_agent import log
+import structlog
 
 from aclientp.client import Client
-from aclientp.schema import (
-    ReadTextFileResponse,
-    RequestPermissionResponse,
-    WriteTextFileResponse,
-)
+from aclientp.schema import ReadTextFileResponse, RequestPermissionResponse, WriteTextFileResponse
 
 
 if TYPE_CHECKING:
@@ -25,8 +21,8 @@ if TYPE_CHECKING:
         CreateTerminalRequest,
         CreateTerminalResponse,
         DeniedOutcome,
-        KillTerminalCommandRequest,
-        KillTerminalCommandResponse,
+        KillTerminalRequest,
+        KillTerminalResponse,
         ReadTextFileRequest,
         ReleaseTerminalRequest,
         ReleaseTerminalResponse,
@@ -38,8 +34,13 @@ if TYPE_CHECKING:
         WaitForTerminalExitResponse,
         WriteTextFileRequest,
     )
+    from aclientp.schema.elicitation import (
+        ElicitationCompleteNotification,
+        ElicitationRequest,
+        ElicitationResponse,
+    )
 
-logger = log.get_logger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class DefaultACPClient(Client):
@@ -168,9 +169,7 @@ class DefaultACPClient(Client):
         """Wait for terminal exit (not implemented)."""
         raise NotImplementedError("Terminal operations not implemented")
 
-    async def kill_terminal(
-        self, params: KillTerminalCommandRequest
-    ) -> KillTerminalCommandResponse | None:
+    async def kill_terminal(self, params: KillTerminalRequest) -> KillTerminalResponse | None:
         """Kill terminal (not implemented)."""
         raise NotImplementedError("Terminal operations not implemented")
 
@@ -185,6 +184,15 @@ class DefaultACPClient(Client):
     async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         self.ext_calls.append((method, params))
         return {"ok": True, "method": method}
+
+    async def elicitation(self, params: ElicitationRequest) -> ElicitationResponse:
+        """Decline elicitation by default."""
+        from aclientp.schema.elicitation import ElicitationResponse
+
+        return ElicitationResponse.decline()
+
+    async def elicitation_complete(self, params: ElicitationCompleteNotification) -> None:
+        """Ignore elicitation complete notifications."""
 
     async def ext_notification(self, method: str, params: dict[str, Any]) -> None:
         self.ext_notes.append((method, params))

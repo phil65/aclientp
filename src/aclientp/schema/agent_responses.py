@@ -1,25 +1,26 @@
 from __future__ import annotations
 
 from collections.abc import Sequence  # noqa: TC003
-from typing import Any, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 from pydantic import Field
 
 from aclientp.schema.base import Response
 from aclientp.schema.capabilities import AgentCapabilities
-from aclientp.schema.common import AuthMethod, Implementation  # noqa: TC001
-from aclientp.schema.session_state import (  # noqa: TC001
-    SessionInfo,
-    SessionModelState,
-    SessionModeState,
+from aclientp.schema.common import AuthAccount, AuthMethod, AuthState, Implementation
+from aclientp.schema.config_options import SessionConfigOption  # noqa: TC001
+from aclientp.schema.mcp import MessageMcpResponse
+from aclientp.schema.providers import (
+    DisableProviderResponse,
+    ListProvidersResponse,
+    SetProviderResponse,
 )
+from aclientp.schema.session_state import SessionInfo, SessionModeState, SessionStatus
+from aclientp.schema.session_updates import Usage  # noqa: TC001
 
 
-class CustomResponse(Response):
-    """Response for custom/extension methods."""
-
-    data: dict[str, Any] | None = None
-    """The method result data."""
+if TYPE_CHECKING:
+    from aclientp.schema import SessionMode
 
 
 StopReason = Literal[
@@ -31,11 +32,19 @@ StopReason = Literal[
 ]
 
 
-class SetSessionModelResponse(Response):
-    """**UNSTABLE**: This capability is not part of the spec yet.
+class CustomResponse(Response):
+    """Response for custom/extension methods."""
 
-    Response to `session/set_model` method.
-    """
+    data: dict[str, Any] | None = None
+    """The method result data."""
+
+
+def _mode_state(
+    modes: Sequence[SessionMode] | None, current: str | None
+) -> SessionModeState | None:
+    if modes and current:
+        return SessionModeState(available_modes=modes, current_mode_id=current)
+    return None
 
 
 class NewSessionResponse(Response):
@@ -44,19 +53,14 @@ class NewSessionResponse(Response):
     See protocol docs: [Creating a Session](https://agentclientprotocol.com/protocol/session-setup#creating-a-session)
     """
 
-    models: SessionModelState | None = None
-    """**UNSTABLE**
-
-    This capability is not part of the spec yet.
-
-    Initial model state if supported by the Agent
-    """
-
     modes: SessionModeState | None = None
     """Initial mode state if supported by the Agent
 
     See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)
     """
+
+    config_options: Sequence[SessionConfigOption] | None = None
+    """**Configuration options for this session."""
 
     session_id: str
     """Unique identifier for the created session.
@@ -68,34 +72,18 @@ class NewSessionResponse(Response):
 class LoadSessionResponse(Response):
     """Response from loading an existing session."""
 
-    models: SessionModelState | None = None
-    """**UNSTABLE**
-
-    This capability is not part of the spec yet.
-
-    Initial model state if supported by the Agent
-    """
-
     modes: SessionModeState | None = None
     """Initial mode state if supported by the Agent
 
     See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)
     """
 
+    config_options: Sequence[SessionConfigOption] = []
+    """The full list of config options with updated values."""
+
 
 class ForkSessionResponse(Response):
-    """**UNSTABLE**: This capability is not part of the spec yet.
-
-    Response from forking an existing session.
-    """
-
-    models: SessionModelState | None = None
-    """**UNSTABLE**
-
-    This capability is not part of the spec yet.
-
-    Initial model state if supported by the Agent
-    """
+    """**UNSTABLE**: Response from forking an existing session."""
 
     modes: SessionModeState | None = None
     """Initial mode state if supported by the Agent
@@ -106,20 +94,27 @@ class ForkSessionResponse(Response):
     session_id: str
     """Unique identifier for the newly created forked session."""
 
+    config_options: Sequence[SessionConfigOption] = []
+    """The full list of config options with updated values."""
+
+    @classmethod
+    def create(
+        cls,
+        session_id: str,
+        config_options: Sequence[SessionConfigOption] | None = None,
+        modes: Sequence[SessionMode] | None = None,
+        current_mode: str | None = None,
+    ) -> Self:
+        """Create a response with the given session ID and config options."""
+        return cls(
+            session_id=session_id,
+            config_options=config_options or [],
+            modes=_mode_state(modes, current_mode),
+        )
+
 
 class ResumeSessionResponse(Response):
-    """**UNSTABLE**: This capability is not part of the spec yet.
-
-    Response from resuming an existing session.
-    """
-
-    models: SessionModelState | None = None
-    """**UNSTABLE**
-
-    This capability is not part of the spec yet.
-
-    Initial model state if supported by the Agent
-    """
+    """Response from resuming an existing session."""
 
     modes: SessionModeState | None = None
     """Initial mode state if supported by the Agent
@@ -127,9 +122,29 @@ class ResumeSessionResponse(Response):
     See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)
     """
 
+    config_options: Sequence[SessionConfigOption] = []
+    """The full list of config options with updated values."""
+
+    @classmethod
+    def create(
+        cls,
+        config_options: Sequence[SessionConfigOption] | None = None,
+        modes: Sequence[SessionMode] | None = None,
+        current_mode: str | None = None,
+    ) -> Self:
+        """Create a response with the given config options and modes."""
+        return cls(config_options=config_options or [], modes=_mode_state(modes, current_mode))
+
 
 class SetSessionModeResponse(Response):
     """Response to `session/set_mode` method."""
+
+
+class SetSessionConfigOptionResponse(Response):
+    """Response to `session/set_config_option` method."""
+
+    config_options: Sequence[SessionConfigOption] = []
+    """The full list of config options with updated values."""
 
 
 class PromptResponse(Response):
@@ -141,9 +156,66 @@ class PromptResponse(Response):
     stop_reason: StopReason
     """Indicates why the agent stopped processing the turn."""
 
+    usage: Usage | None = None
+    """**UNSTABLE**: Token usage for this turn (optional)."""
+
+
+class CloseSessionResponse(Response):
+    """Response from closing a session."""
+
+
+class DeleteSessionResponse(Response):
+    """Response to ``session/delete``."""
+
+
+class ArchiveSessionResponse(Response):
+    """**UNSTABLE**: Response to ``session/archive``."""
+
+
+class UnarchiveSessionResponse(Response):
+    """**UNSTABLE**: Response to ``session/unarchive``."""
+
+
+class SessionStatusResponse(Response):
+    """**UNSTABLE**: Response to ``session/status``."""
+
+    status: SessionStatus
+    """Whether the Agent has the session in memory."""
+
+
+class SessionOptionsResponse(Response):
+    """**UNSTABLE**: The modes and config options a session would start with."""
+
+    modes: SessionModeState | None = None
+    """The mode state the session would start with, if the Agent supports modes."""
+
+    config_options: Sequence[SessionConfigOption] | None = None
+    """The config options the session would start with."""
+
+
+class SetSessionTitleResponse(Response):
+    """**UNSTABLE**: Response to ``session/set_title``."""
+
+    title: str
+    """The title the Agent stored."""
+
 
 class AuthenticateResponse(Response):
     """Response to authenticate method."""
+
+
+class LogoutResponse(Response):
+    """Response to the ``logout`` method."""
+
+
+class AuthStatusResponse(Response):
+    """**UNSTABLE**: Response to ``auth/status``."""
+
+    state: AuthState
+    """Whether the agent can start sessions without the user signing in first."""
+
+    accounts: Sequence[AuthAccount] = Field(default_factory=list)
+    """The accounts the agent has configured, for display."""
 
 
 class InitializeResponse(Response):
@@ -187,6 +259,8 @@ class InitializeResponse(Response):
         embedded_context_prompts: bool = False,
         image_prompts: bool = False,
         list_sessions: bool = False,
+        resume_session: bool = False,
+        close_session: bool = False,
         auth_methods: Sequence[AuthMethod] | None = None,
     ) -> Self:
         """Create an instance of AgentCapabilities.
@@ -202,7 +276,9 @@ class InitializeResponse(Response):
             audio_prompts: Whether the agent supports audio prompts.
             embedded_context_prompts: Whether the agent supports embedded context prompts.
             image_prompts: Whether the agent supports image prompts.
-            list_sessions: Whether the agent supports `session/list` (unstable).
+            list_sessions: Whether the agent supports `session/list`.
+            resume_session: Whether the agent supports `session/resume`.
+            close_session: Whether the agent supports `session/close`.
             auth_methods: The authentication methods supported by the agent.
         """
         caps = AgentCapabilities.create(
@@ -213,6 +289,8 @@ class InitializeResponse(Response):
             embedded_context_prompts=embedded_context_prompts,
             image_prompts=image_prompts,
             list_sessions=list_sessions,
+            resume_session=resume_session,
+            close_session=close_session,
         )
         return cls(
             agent_info=Implementation(name=name, title=title, version=version),
@@ -223,10 +301,7 @@ class InitializeResponse(Response):
 
 
 class ListSessionsResponse(Response):
-    """**UNSTABLE**: This capability is not part of the spec yet.
-
-    Response from listing sessions.
-    """
+    """Response from listing sessions."""
 
     next_cursor: str | None = None
     """Opaque cursor token. If present, pass this in the next request's cursor parameter
@@ -239,13 +314,26 @@ class ListSessionsResponse(Response):
 AgentResponse = (
     InitializeResponse
     | AuthenticateResponse
+    | LogoutResponse
+    | AuthStatusResponse
     | NewSessionResponse
     | LoadSessionResponse
     | ForkSessionResponse
     | ResumeSessionResponse
+    | CloseSessionResponse
     | ListSessionsResponse
+    | DeleteSessionResponse
+    | ArchiveSessionResponse
+    | UnarchiveSessionResponse
+    | SessionStatusResponse
+    | SessionOptionsResponse
+    | SetSessionTitleResponse
     | SetSessionModeResponse
+    | SetSessionConfigOptionResponse
     | PromptResponse
-    | SetSessionModelResponse
+    | ListProvidersResponse
+    | SetProviderResponse
+    | DisableProviderResponse
+    | MessageMcpResponse
     | CustomResponse
 )

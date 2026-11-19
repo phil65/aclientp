@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from aclientp.acp_requests import ACPRequests
+    from aclientp.agent.acp_requests import ACPRequests
     from aclientp.schema import TerminalOutputResponse, WaitForTerminalExitResponse
 
 

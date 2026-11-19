@@ -12,12 +12,12 @@ from typing import TYPE_CHECKING, Any
 import uuid
 
 from anyenv import ProcessManager
-from llmling_agent.log import get_logger
+import structlog
 
 from aclientp.client.protocol import Client
 from aclientp.schema import (
     CreateTerminalResponse,
-    KillTerminalCommandResponse,
+    KillTerminalResponse,
     ReadTextFileResponse,
     ReleaseTerminalResponse,
     RequestPermissionResponse,
@@ -30,7 +30,7 @@ from aclientp.schema import (
 if TYPE_CHECKING:
     from aclientp.schema import (
         CreateTerminalRequest,
-        KillTerminalCommandRequest,
+        KillTerminalRequest,
         ReadTextFileRequest,
         ReleaseTerminalRequest,
         RequestPermissionRequest,
@@ -39,8 +39,13 @@ if TYPE_CHECKING:
         WaitForTerminalExitRequest,
         WriteTextFileRequest,
     )
+    from aclientp.schema.elicitation import (
+        ElicitationCompleteNotification,
+        ElicitationRequest,
+        ElicitationResponse,
+    )
 
-logger = get_logger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class HeadlessACPClient(Client):
@@ -124,13 +129,12 @@ class HeadlessACPClient(Client):
         """Write text to file."""
         if not self.allow_file_operations:
             raise RuntimeError("File operations not allowed")
+        path = Path(params.path)
         try:
-            path = Path(params.path)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(params.content, encoding="utf-8")
             logger.debug("Wrote file", path=params.path, num_chars=len(params.content))
             return WriteTextFileResponse()
-
         except Exception:
             logger.exception("Failed to write file", path=params.path)
             raise
@@ -160,8 +164,7 @@ class HeadlessACPClient(Client):
         """Get output from terminal."""
         terminal_id = params.terminal_id
         if terminal_id not in self.terminals:
-            msg = f"Terminal {terminal_id} not found"
-            raise ValueError(msg)
+            raise ValueError(f"Terminal {terminal_id} not found")
         try:
             process_id = self.terminals[terminal_id]
             output = await self.process_manager.get_output(process_id)
@@ -176,8 +179,7 @@ class HeadlessACPClient(Client):
         """Wait for terminal process to exit."""
         terminal_id = params.terminal_id
         if terminal_id not in self.terminals:
-            msg = f"Terminal {terminal_id} not found"
-            raise ValueError(msg)
+            raise ValueError(f"Terminal {terminal_id} not found")
         try:
             process_id = self.terminals[terminal_id]
             exit_code = await self.process_manager.wait_for_exit(process_id)
@@ -187,19 +189,16 @@ class HeadlessACPClient(Client):
             logger.exception("Failed to wait", terminal_id=terminal_id)
             raise
 
-    async def kill_terminal(
-        self, params: KillTerminalCommandRequest
-    ) -> KillTerminalCommandResponse | None:
+    async def kill_terminal(self, params: KillTerminalRequest) -> KillTerminalResponse | None:
         """Kill terminal process."""
         terminal_id = params.terminal_id
         if terminal_id not in self.terminals:
-            msg = f"Terminal {terminal_id} not found"
-            raise ValueError(msg)
+            raise ValueError(f"Terminal {terminal_id} not found")
         try:
             process_id = self.terminals[terminal_id]
             await self.process_manager.kill_process(process_id)
             logger.info("Killed terminal", terminal_id=terminal_id)
-            return KillTerminalCommandResponse()
+            return KillTerminalResponse()
         except Exception:
             logger.exception("Failed to kill terminal", terminal_id=terminal_id)
             raise
@@ -210,8 +209,7 @@ class HeadlessACPClient(Client):
         """Release terminal resources."""
         terminal_id = params.terminal_id
         if terminal_id not in self.terminals:
-            msg = f"Terminal {terminal_id} not found"
-            raise ValueError(msg)
+            raise ValueError(f"Terminal {terminal_id} not found")
         try:
             process_id = self.terminals[terminal_id]
             await self.process_manager.release_process(process_id)
@@ -261,6 +259,15 @@ class HeadlessACPClient(Client):
         """Handle extension method calls."""
         logger.debug("Extension method called", method=method)
         return {"ok": True, "method": method, "params": params}
+
+    async def elicitation(self, params: ElicitationRequest) -> ElicitationResponse:
+        """Decline elicitation by default."""
+        from aclientp.schema.elicitation import ElicitationResponse
+
+        return ElicitationResponse.decline()
+
+    async def elicitation_complete(self, params: ElicitationCompleteNotification) -> None:
+        """Ignore elicitation complete notifications."""
 
     async def ext_notification(self, method: str, params: dict[str, Any]) -> None:
         """Handle extension notifications."""

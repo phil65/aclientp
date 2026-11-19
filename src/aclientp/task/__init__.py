@@ -3,25 +3,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
-from typing import Any
-
-__all__ = ["RpcTask", "RpcTaskKind"]
+from typing import TYPE_CHECKING, Any, Literal
 
 
-class RpcTaskKind(Enum):
-    """RpcTaskKind represents the kind of task to be executed by the agent."""
+if TYPE_CHECKING:
+    import asyncio
 
-    REQUEST = "request"
-    NOTIFICATION = "notification"
+
+RpcTaskKind = Literal["request", "notification"]
 
 
 @dataclass(slots=True)
 class RpcTask:
-    """RpcTask represents a task to be executed by the agent."""
+    """An incoming request or notification waiting to be handled.
+
+    Attributes:
+        kind: Whether the message is a request or a notification.
+        message: The raw JSON-RPC message.
+        done: Resolved once the message has been handled. Set for notifications, so the
+            connection can wait for notifications received before a given response.
+    """
 
     kind: RpcTaskKind
     message: dict[str, Any]
+    done: asyncio.Future[None] | None = None
 
 
 from .dispatcher import (
@@ -31,12 +36,12 @@ from .dispatcher import (
     RequestRunner,
 )
 from .queue import InMemoryMessageQueue, MessageQueue
-from .sender import MessageSender, SenderFactory
+from .sender import MessageSender
 from .state import InMemoryMessageStateStore, MessageStateStore
 from .supervisor import TaskSupervisor
 from .debug import DebugEntry, DebuggingMessageStateStore
 
-__all__ += [
+__all__ = [
     "DebugEntry",
     "DebuggingMessageStateStore",
     "DefaultMessageDispatcher",
@@ -48,6 +53,7 @@ __all__ += [
     "MessageStateStore",
     "NotificationRunner",
     "RequestRunner",
-    "SenderFactory",
+    "RpcTask",
+    "RpcTaskKind",
     "TaskSupervisor",
 ]

@@ -3,7 +3,7 @@
 [project]
 name = "aclientp"
 version = "0.0.1"
-description = "Alternative ACP protocol implementation"
+description = "Agent Client Protocol (ACP) for Python: typed v1 and draft v2, checked against the upstream schema"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
@@ -11,7 +11,7 @@ license-files = ["LICENSE"]
 authors = [
   { name = "Philipp Temminghoff", email = "philipptemminghoff@googlemail.com" },
 ]
-keywords = []
+keywords = ["acp", "agent-client-protocol", "agents", "ai", "json-rpc", "llm", "zed"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Framework :: Pydantic",
@@ -20,18 +20,36 @@ classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
-  "Topic :: Documentation",
   "Topic :: Software Development",
-  "Topic :: Utilities",
+  "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed",
 ]
 dependencies = [
-  "pydantic",
-  "schemez",
+  "anyenv>=2.0.17",
+  "anyio>=4.0",
+  "httpx>=0.28",
+  "pydantic>=2.14",
+  "structlog>=25.0",
+  "upathtools>=1.20",
 ]
+
+[project.optional-dependencies]
+bridge = ["starlette", "uvicorn", "websockets"]  # stdio <-> HTTP / WebSocket bridge
+debug = ["fastapi", "uvicorn"]  # Debug server with a mock agent
+tracing = ["logfire"]  # Spans for handled requests
+websocket = ["websockets"]  # WebSocket transport
+
+[project.scripts]
+aclientp-bridge = "aclientp.bridge.__main__:main"
+aclientp-debug-server = "aclientp.agent.implementations.debug_server.cli:main"
+
+[project.entry-points."fsspec.specs"]
+acp = "aclientp.filesystem:ACPFileSystem"
+
+[project.entry-points."universal_pathlib.implementations"]
+acp = "aclientp.filesystem:ACPPath"
 
 [project.urls]
 "Code coverage" = "https://app.codecov.io/gh/phil65/aclientp"
@@ -47,6 +65,8 @@ dev = [
   "pytest",
   "pytest-cov",
   # Only add below (Copier)
+  "pytest-asyncio",
+  "pytest-timeout",
 ]
 benchmark = ["pyinstrument"]
 docs = [
@@ -88,11 +108,32 @@ docstring-style = "google"
 
 [tool.mypy]
 python_version = "3.13"
-disable_error_code = ["misc", "import"]
 pretty = true
+strict = true
 check_untyped_defs = true
-exclude = ["venv/", ".venv/", "tests/"]
+exclude = ["venv/", ".venv/"]
 plugins = ["pydantic.mypy"]
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_incomplete_defs = false
+disable_error_code = ["no-untyped-def", "no-untyped-call", "no-any-return", "unused-ignore"]
+
+[[tool.mypy.overrides]]
+module = ["fsspec.*"]
+ignore_missing_imports = true
 
 [tool.pyright]
 venvPath = "."
@@ -120,6 +161,8 @@ log_format = "%(asctime)s %(levelname)s %(message)s"
 minversion = "9.0"
 testpaths = ["tests/"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+timeout = "60"
 
 [tool.ruff]
 line-length = 100
@@ -226,6 +269,7 @@ ignore = [
   "SLF001",  # Private member accessed
   "TRY003",  # Avoid specifying long messages outside the exception class
   "TC006",  # runtime-cast-value
+  "PLR0917",  # Too many positional arguments
 ]
 
 [tool.ruff.lint.flake8-quotes]
@@ -237,6 +281,8 @@ runtime-evaluated-base-classes = [
   "sqlalchemy.orm.DeclarativeBase",
   "schemez.Schema",
   "sqlmodel.SQLModel",
+  "aclientp.schema.base.Schema",
+  "aclientp.schema.v2.base.Schema",
 ]
 runtime-evaluated-decorators = [
   "pydantic.validate_call",
@@ -258,8 +304,10 @@ max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402", "I001"]
+# Open ACP enums: known `Literal` values documented, custom/future values accepted as `str`
+"src/aclientp/schema/*" = ["PYI051"]
 "scripts/*" = ["INP001"]
-"*tests/*" = ["D100"]
+"*tests/*" = ["D100", "PLR2004"]
 
 [tool.ruff.format]
 preview = true

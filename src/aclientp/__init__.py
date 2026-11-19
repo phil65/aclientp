@@ -1,71 +1,96 @@
-"""AClientP: main package.
+"""Agent Client protocol (ACP) implementation."""
 
-Alternative ACP protocol implementation.
-"""
+# Last synced commit from https://github.com/agentclientprotocol/agent-client-protocol
+SPEC_SYNCED_COMMIT = "4aab69b4e6bcb53965ff5b1141d2f04a62a25c6c"
 
-from __future__ import annotations
-
-from importlib.metadata import version
-
-__version__ = version("aclientp")
-__title__ = "AClientP"
-
-__author__ = "Philipp Temminghoff"
-__author_email__ = "philipptemminghoff@googlemail.com"
-__copyright__ = "Copyright (c) 2025 Philipp Temminghoff"
-__license__ = "MIT"
-__url__ = "https://github.com/phil65/aclientp"
-
-__all__ = [
-    "__version__",
-]
-
-
+from aclientp.client import DefaultACPClient, HeadlessACPClient, NoOpClient, ClientSideConnection
 from aclientp.agent import AgentSideConnection
 from aclientp.agent.protocol import Agent
-from aclientp.bridge import ACPBridge, BridgeSettings
-from aclientp.client import (
-    ClientSideConnection,
-    DefaultACPClient,
-    HeadlessACPClient,
-    NoOpClient,
-)
 from aclientp.client.protocol import Client
-from aclientp.debug_server import cli
-from aclientp.exceptions import RequestError
-from aclientp.filesystem import ACPFileSystem, ACPPath
+from aclientp.terminal_handle import TerminalHandle
+from aclientp.tool_call_state import ToolCallState
 from aclientp.schema import (
-    PROTOCOL_VERSION,
-    AgentMessageChunk,
-    AgentMethod,
-    AllowedOutcome,
-    Annotations,
+    ArchiveSessionRequest,
+    ArchiveSessionResponse,
+    AuthStatusRequest,
+    AuthStatusResponse,
+    AuthStatusUpdateNotification,
+    CancelRequestNotification,
+    DeleteSessionRequest,
+    DeleteSessionResponse,
+    ForkSessionRequest,
+    ForkSessionResponse,
+    ListSessionsRequest,
+    ListSessionsResponse,
+    MessageMcpNotification,
+    MessageMcpRequest,
+    MessageMcpResponse,
+    ResumeSessionRequest,
+    ResumeSessionResponse,
+    SessionOptionsRequest,
+    SessionOptionsResponse,
+    SessionStatusRequest,
+    SessionStatusResponse,
+    SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse,
+    SetSessionTitleRequest,
+    SetSessionTitleResponse,
+    SystemPrompt,
+    UnarchiveSessionRequest,
+    UnarchiveSessionResponse,
+    AgentAuthCapabilities,
+    AuthCapabilities,
+    AuthMethod,
+    AuthMethodAgent,
+    AuthMethodTerminal,
     AuthenticateRequest,
     AuthenticateResponse,
-    AvailableCommand,
+    BooleanPropertySchema,
     CancelNotification,
-    ClientCapabilities,
-    ClientMethod,
     CreateTerminalRequest,
-    CreateTerminalResponse,
-    DeniedOutcome,
-    EnvVariable,
-    FileSystemCapability,
-    HttpMcpServer,
+    ClientCapabilities,
+    ElicitationCapabilities,
+    ElicitationCompleteNotification,
+    ElicitationContentValue,
+    ElicitationFormCapabilities,
+    ElicitationPropertySchema,
+    ElicitationRequest,
+    ElicitationResponse,
+    ElicitationSchema,
+    ElicitationUrlCapabilities,
+    EnumOption,
+    SessionMode,
+    FileSystemCapabilities,
+    AgentMessageChunk,
+    UserMessageChunk,
+    TextContentBlock,
+    SessionModeState,
     Implementation,
+    ToolCallLocation,
+    EnvVariable,
+    StdioMcpServer,
+    SseMcpServer,
+    HttpMcpServer,
+    CreateTerminalResponse,
     InitializeRequest,
-    InitializeResponse,
-    KillTerminalCommandRequest,
-    KillTerminalCommandResponse,
-    LoadSessionRequest,
-    LoadSessionResponse,
-    ModelInfo,
-    NewSessionRequest,
-    NewSessionResponse,
-    PermissionOption,
-    PlanEntry,
+    IntegerPropertySchema,
+    LogoutCapabilities,
+    LogoutRequest,
+    LogoutResponse,
     PlanEntryPriority,
     PlanEntryStatus,
+    InitializeResponse,
+    KillTerminalRequest,
+    KillTerminalResponse,
+    LoadSessionRequest,
+    LoadSessionResponse,
+    MultiSelectItems,
+    MultiSelectPropertySchema,
+    NumberPropertySchema,
+    AllowedOutcome,
+    DeniedOutcome,
+    NewSessionRequest,
+    NewSessionResponse,
     PromptRequest,
     PromptResponse,
     ReadTextFileRequest,
@@ -74,38 +99,51 @@ from aclientp.schema import (
     ReleaseTerminalResponse,
     RequestPermissionRequest,
     RequestPermissionResponse,
-    SessionMode,
-    SessionModelState,
-    SessionModeState,
+    StringFormatLiteral,
+    StringPropertySchema,
     SessionNotification,
-    SetSessionModelRequest,
-    SetSessionModelResponse,
+    CloseSessionRequest,
+    CloseSessionResponse,
     SetSessionModeRequest,
     SetSessionModeResponse,
-    SseMcpServer,
-    StdioMcpServer,
     TerminalOutputRequest,
     TerminalOutputResponse,
-    TextContentBlock,
-    ToolCall,
-    ToolCallContent,
-    ToolCallKind,
-    ToolCallLocation,
-    ToolCallStatus,
-    UserMessageChunk,
     WaitForTerminalExitRequest,
     WaitForTerminalExitResponse,
     WriteTextFileRequest,
     WriteTextFileResponse,
+    TitledMultiSelectItems,
+    UntitledMultiSelectItems,
+    PermissionOption,
+    PROTOCOL_VERSION,
+    AgentMethod,
+    ClientMethod,
+    Annotations,
+    AvailableCommand,
+    PlanEntry,
+    ToolCallContent,
+    ToolCallKind,
+    ToolCallStatus,
+    ToolCallUpdate,
 )
-from aclientp.stdio import connect_to_agent, run_agent, stdio_streams
-from aclientp.terminal_handle import TerminalHandle
+from aclientp.stdio import stdio_streams, run_agent, connect_to_agent
+from aclientp.transports import (
+    serve,
+    StdioTransport,
+    WebSocketTransport,
+    StreamTransport,
+    Transport,
+)
+from aclientp.exceptions import RequestError
+from aclientp.agent import acp_requests, notifications
 
+__version__ = "0.0.1"
 
 __all__ = [  # noqa: RUF022
     # bridge
-    "ACPBridge",
-    "BridgeSettings",
+    # Temporary re-export these
+    "acp_requests",
+    "notifications",
     # client implementations
     "DefaultACPClient",
     "HeadlessACPClient",
@@ -115,12 +153,21 @@ __all__ = [  # noqa: RUF022
     # literal types
     "AgentMethod",
     "ClientMethod",
+    # auth
+    "AgentAuthCapabilities",
+    "AuthCapabilities",
+    "LogoutCapabilities",
+    "LogoutRequest",
+    "LogoutResponse",
+    "AuthMethod",
+    "AuthMethodAgent",
+    "AuthMethodTerminal",
     # types
     "Annotations",
     "AvailableCommand",
     "PlanEntry",
     "AllowedOutcome",
-    "ToolCall",
+    "ToolCallUpdate",
     "DeniedOutcome",
     "ToolCallContent",
     "PermissionOption",
@@ -144,6 +191,26 @@ __all__ = [  # noqa: RUF022
     "LoadSessionResponse",
     "AuthenticateRequest",
     "AuthenticateResponse",
+    # elicitation
+    "BooleanPropertySchema",
+    "ElicitationCapabilities",
+    "ElicitationCompleteNotification",
+    "ElicitationContentValue",
+    "ElicitationFormCapabilities",
+    "ElicitationPropertySchema",
+    "ElicitationRequest",
+    "ElicitationResponse",
+    "ElicitationSchema",
+    "ElicitationUrlCapabilities",
+    "EnumOption",
+    "IntegerPropertySchema",
+    "MultiSelectItems",
+    "MultiSelectPropertySchema",
+    "NumberPropertySchema",
+    "StringFormatLiteral",
+    "StringPropertySchema",
+    "TitledMultiSelectItems",
+    "UntitledMultiSelectItems",
     "PromptRequest",
     "ClientCapabilities",
     "SessionModeState",
@@ -160,11 +227,37 @@ __all__ = [  # noqa: RUF022
     "SessionNotification",
     "SetSessionModeRequest",
     "SetSessionModeResponse",
-    # model types
-    "ModelInfo",
-    "SessionModelState",
-    "SetSessionModelRequest",
-    "SetSessionModelResponse",
+    # session lifecycle
+    "ArchiveSessionRequest",
+    "ArchiveSessionResponse",
+    "AuthStatusRequest",
+    "AuthStatusResponse",
+    "AuthStatusUpdateNotification",
+    "CancelRequestNotification",
+    "DeleteSessionRequest",
+    "DeleteSessionResponse",
+    "ForkSessionRequest",
+    "ForkSessionResponse",
+    "ListSessionsRequest",
+    "ListSessionsResponse",
+    "MessageMcpNotification",
+    "MessageMcpRequest",
+    "MessageMcpResponse",
+    "ResumeSessionRequest",
+    "ResumeSessionResponse",
+    "SessionOptionsRequest",
+    "SessionOptionsResponse",
+    "SessionStatusRequest",
+    "SessionStatusResponse",
+    "SetSessionConfigOptionRequest",
+    "SetSessionConfigOptionResponse",
+    "SetSessionTitleRequest",
+    "SetSessionTitleResponse",
+    "SystemPrompt",
+    "UnarchiveSessionRequest",
+    "UnarchiveSessionResponse",
+    "CloseSessionRequest",
+    "CloseSessionResponse",
     # terminal types
     "CreateTerminalRequest",
     "CreateTerminalResponse",
@@ -172,8 +265,8 @@ __all__ = [  # noqa: RUF022
     "TerminalOutputResponse",
     "WaitForTerminalExitRequest",
     "WaitForTerminalExitResponse",
-    "KillTerminalCommandRequest",
-    "KillTerminalCommandResponse",
+    "KillTerminalRequest",
+    "KillTerminalResponse",
     "ReleaseTerminalRequest",
     "ReleaseTerminalResponse",
     # core
@@ -183,16 +276,18 @@ __all__ = [  # noqa: RUF022
     "Agent",
     "Client",
     "TerminalHandle",
+    "ToolCallState",
     # connection helpers (recommended)
     "run_agent",
     "connect_to_agent",
     # split protocols
-    "FileSystemCapability",
+    "FileSystemCapabilities",
     # stdio helper
     "stdio_streams",
-    # filesystem
-    "ACPFileSystem",
-    "ACPPath",
-    # cli
-    "cli",
+    # transport
+    "serve",
+    "StdioTransport",
+    "WebSocketTransport",
+    "StreamTransport",
+    "Transport",
 ]
