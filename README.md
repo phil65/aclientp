@@ -56,6 +56,7 @@ uv add aclientp
 | Extra | Adds |
 | --- | --- |
 | `websocket` | WebSocket transport |
+| `http2` | HTTP/2 for the Streamable HTTP client |
 | `bridge` | `aclientp-bridge`: expose a stdio agent over HTTP / WebSocket |
 | `debug` | `aclientp-debug-server`: a mock agent with a web UI |
 | `tracing` | logfire spans for handled requests |
@@ -109,6 +110,34 @@ A v2 agent subclasses `aclientp.v2.agent.Agent` and overrides the methods it sup
 the rest answer `-32601`. v2 models follow the v2 patch rules: optional fields default
 to `MISSING` and are left out, `None` is sent as `null`. Serialize with `to_wire` and
 test fields with `is_set` (`MISSING` is truthy).
+
+### Remote agents over Streamable HTTP (experimental)
+
+`connect_http_transport` is the client side of ACP's Streamable HTTP transport (the
+"Streamable HTTP & WebSocket Transport" RFD), compatible with the TypeScript SDK's
+experimental server. It yields byte streams like a stdio agent's:
+
+```python
+from aclientp import connect_http_transport
+from aclientp.client.connection import ClientSideConnection
+
+
+async with connect_http_transport(url, headers={"X-API-Key": key}) as (reader, writer):
+    conn = ClientSideConnection(lambda agent: MyClient(), writer, reader)
+    await conn.initialize(InitializeRequest(protocol_version=1))
+```
+
+For clients that only launch local agents, `aclientp-connect` relays stdio to a remote
+agent. Header values may reference environment variables:
+
+```json
+{
+  "command": "uvx",
+  "args": ["--from", "aclientp[http2]", "aclientp-connect", "https://example.com/api/acp",
+           "-H", "X-API-Key: ${MY_API_KEY}"],
+  "env": { "MY_API_KEY": "..." }
+}
+```
 
 ## Staying in sync with upstream
 

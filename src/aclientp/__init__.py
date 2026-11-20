@@ -127,6 +127,7 @@ from aclientp.schema import (
     ToolCallUpdate,
 )
 from aclientp.stdio import stdio_streams, run_agent, connect_to_agent
+from aclientp.http_transport import HttpTransportError, connect_http_transport
 from aclientp.transports import (
     serve,
     StdioTransport,
@@ -288,6 +289,8 @@ __all__ = [  # noqa: RUF022
     "serve",
     "StdioTransport",
     "WebSocketTransport",
+    "HttpTransportError",
+    "connect_http_transport",
     "StreamTransport",
     "Transport",
 ]

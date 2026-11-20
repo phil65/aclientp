@@ -38,11 +38,13 @@ dependencies = [
 [project.optional-dependencies]
 bridge = ["starlette", "uvicorn", "websockets"]  # stdio <-> HTTP / WebSocket bridge
 debug = ["fastapi", "uvicorn"]  # Debug server with a mock agent
+http2 = ["httpx[http2]"]  # HTTP/2 for the Streamable HTTP client (required by the RFD)
 tracing = ["logfire"]  # Spans for handled requests
 websocket = ["websockets"]  # WebSocket transport
 
 [project.scripts]
 aclientp-bridge = "aclientp.bridge.__main__:main"
+aclientp-connect = "aclientp.http_relay:main"
 aclientp-debug-server = "aclientp.agent.implementations.debug_server.cli:main"
 
 [project.entry-points."fsspec.specs"]
