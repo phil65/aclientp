@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import os
 import subprocess
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
     from aclientp.agent.connection import AgentSideConnection
     from aclientp.agent.protocol import Agent
+    from aclientp.http_server import Authenticate
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,30 @@ class WebSocketTransport:
 
 
 @dataclass
+class HttpTransport:
+    """Configuration for the Streamable HTTP & WebSocket server transport (experimental).
+
+    Serves ACP on one endpoint per the transport RFD: Streamable HTTP (POST/GET/DELETE)
+    and WebSocket upgrade. Each client connection gets its own agent instance. Requires
+    the ``bridge`` extra (starlette, uvicorn).
+
+    Attributes:
+        host: Host to bind to.
+        port: Port to listen on.
+        path: Endpoint path.
+        authenticate: Identifies callers (None rejects with 401); connections belong to
+            their creator. None accepts every caller, for local use only.
+        allow_origins: CORS origins for browser clients.
+    """
+
+    host: str = "localhost"
+    port: int = 8765
+    path: str = "/acp"
+    authenticate: Authenticate | None = None
+    allow_origins: list[str] = field(default_factory=list)
+
+
+@dataclass
 class StreamTransport:
     """Configuration for custom stream transport.
 
@@ -78,7 +103,13 @@ class StreamTransport:
 
 
 # Type alias for all supported transports
-Transport = StdioTransport | WebSocketTransport | StreamTransport | Literal["stdio", "websocket"]
+Transport = (
+    StdioTransport
+    | WebSocketTransport
+    | HttpTransport
+    | StreamTransport
+    | Literal["stdio", "websocket", "http"]
+)
 
 
 # =============================================================================
@@ -133,6 +164,8 @@ async def serve(
             transport = StdioTransport()
         case "websocket":
             transport = WebSocketTransport()
+        case "http":
+            transport = HttpTransport()
 
     # Dispatch to appropriate runner
     match transport:
@@ -140,6 +173,8 @@ async def serve(
             await _serve_stdio(agent, shutdown_event, debug_file, **kwargs)
         case WebSocketTransport(host=host, port=port):
             await _serve_websocket(agent, host, port, shutdown_event, debug_file, **kwargs)
+        case HttpTransport():
+            await _serve_http(agent, transport, shutdown_event, debug_file, **kwargs)
         case StreamTransport(reader=reader, writer=writer):
             await _serve_streams(agent, reader, writer, shutdown_event, debug_file, **kwargs)
         case _ as unreachable:
@@ -241,6 +276,51 @@ async def _serve_websocket(
     # Clean up remaining connections
     for conn in connections:
         await conn.close()
+
+
+async def _serve_http(
+    agent: Agent | Callable[[AgentSideConnection], Agent],
+    transport: HttpTransport,
+    shutdown_event: asyncio.Event | None,
+    debug_file: str | None,
+    **kwargs: Any,
+) -> None:
+    """Run agent as a Streamable HTTP & WebSocket server."""
+    import uvicorn
+
+    from aclientp.agent.connection import AgentSideConnection
+    from aclientp.http_server import AcpHttpServer
+
+    agent_factory = _ensure_factory(agent)
+
+    async def serve_connection(reader: ByteReceiveStream, writer: ByteSendStream) -> None:
+        conn = AgentSideConnection(agent_factory, writer, reader, debug_file=debug_file, **kwargs)
+        await _run_until_closed(conn, None)
+
+    server = AcpHttpServer(
+        serve_connection,
+        path=transport.path,
+        authenticate=transport.authenticate,
+        allow_origins=transport.allow_origins,
+    )
+    config = uvicorn.Config(
+        server.app(), host=transport.host, port=transport.port, log_level="warning"
+    )
+    uvicorn_server = uvicorn.Server(config)
+
+    async def stop_on_shutdown() -> None:
+        if shutdown_event is not None:
+            await shutdown_event.wait()
+            uvicorn_server.should_exit = True
+
+    stopper = asyncio.create_task(stop_on_shutdown())
+    url = f"http://{transport.host}:{transport.port}{transport.path}"
+    logger.info("ACP Streamable HTTP / WebSocket server on %s", url)
+    try:
+        await uvicorn_server.serve()
+    finally:
+        stopper.cancel()
+        await server.close()
 
 
 class _WebSocketReadStream(ByteReceiveStream):

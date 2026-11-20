@@ -1,7 +1,9 @@
-"""ACP Bridge - Proxy stdio ACP agents to streamable HTTP transport.
+"""ACP Bridge - serve a stdio ACP agent over Streamable HTTP and WebSocket.
 
-This module provides functionality to spawn a stdio-based ACP agent subprocess
-and expose it via a streamable HTTP endpoint.
+Exposes a stdio agent on ``/acp`` per ACP's Streamable HTTP & WebSocket transport RFD
+(see :mod:`aclientp.http_server`). Every client connection gets its own agent
+subprocess; messages are relayed unchanged in both directions, so session updates and
+agent requests (permissions, file access) reach the client.
 """
 
 from __future__ import annotations
@@ -9,20 +11,15 @@ from __future__ import annotations
 import contextlib
 from dataclasses import dataclass, field
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
-from starlette.applications import Starlette
-from starlette.middleware import Middleware
-from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import JSONResponse, Response
+import anyio
+from starlette.responses import JSONResponse
 from starlette.routing import Route
 import uvicorn
 
-from aclientp.agent.connection import _agent_handler
 from aclientp.bridge.settings import BridgeSettings
-from aclientp.client.connection import ClientSideConnection
-from aclientp.client.implementations import NoOpClient
+from aclientp.http_server import AcpHttpServer
 from aclientp.transports import spawn_stdio_transport
 
 
@@ -30,18 +27,25 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
-    from anyio.abc import Process
+    from anyio.abc import ByteReceiveStream, ByteSendStream
     from starlette.requests import Request
-
-    from aclientp.schema import AgentMethod
+    from starlette.responses import Response
 
 
 logger = logging.getLogger(__name__)
 
 
+async def _pump(source: ByteReceiveStream, sink: ByteSendStream) -> None:
+    with contextlib.suppress(
+        anyio.EndOfStream, anyio.ClosedResourceError, anyio.BrokenResourceError
+    ):
+        async for chunk in source:
+            await sink.send(chunk)
+
+
 @dataclass(kw_only=True)
 class ACPBridge:
-    """Bridge that proxies stdio ACP agents to streamable HTTP."""
+    """Bridge that serves a stdio ACP agent over Streamable HTTP and WebSocket."""
 
     command: str
     """ACP Agent shell command which should get spawned by the bridge."""
@@ -59,104 +63,43 @@ class ACPBridge:
     """Bridge server settings."""
 
     def __post_init__(self) -> None:
-        self._connection: ClientSideConnection | None = None
-        self._process: Process | None = None
+        self._server = AcpHttpServer(
+            self._serve_connection, allow_origins=self.settings.allow_origins or []
+        )
 
-    async def _handle_acp_request(self, request: Request) -> Response:
-        """Handle incoming ACP JSON-RPC requests."""
-        if self._connection is None:
-            response = {"jsonrpc": "2.0", "error": {"code": -32603, "message": "Not connected"}}
-            return JSONResponse(response, status_code=503)
+    async def _serve_connection(self, reader: ByteReceiveStream, writer: ByteSendStream) -> None:
+        """Run one agent subprocess for a client connection, relaying both ways."""
+        spawn = spawn_stdio_transport(
+            self.command, *self.args, env=self.env, cwd=self.cwd, log_stderr=True
+        )
+        async with spawn as (agent_out, agent_in, _process), anyio.create_task_group() as tg:
 
-        try:
-            body = await request.json()
-        except Exception:  # noqa: BLE001
-            response = {"jsonrpc": "2.0", "error": {"code": -32700, "message": "Parse error"}}
-            return JSONResponse(response, status_code=400)
+            async def relay(source: ByteReceiveStream, sink: ByteSendStream) -> None:
+                await _pump(source, sink)
+                tg.cancel_scope.cancel()  # Either side ending ends the connection
 
-        method = body.get("method")
-        params = body.get("params")
-        request_id = body.get("id")
-        is_notification = request_id is None
-
-        if method is None:
-            error = {"code": -32600, "message": "Invalid Request"}
-            response = {"jsonrpc": "2.0", "id": request_id, "error": error}
-            return JSONResponse(response, status_code=400)
-
-        try:
-            result = await self._dispatch_to_agent(method, params, is_notification)
-            if is_notification:
-                return Response(status_code=204)
-            return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": result})
-        except Exception as exc:
-            logger.exception("Error dispatching request to agent")
-            err = {"code": -32603, "message": str(exc)}
-            return JSONResponse({"jsonrpc": "2.0", "id": request_id, "error": err}, status_code=500)
-
-    async def _dispatch_to_agent(
-        self,
-        method: AgentMethod | str,
-        params: dict[str, Any] | None,
-        is_notification: bool,
-    ) -> Any:
-        """Dispatch a request to the connected agent."""
-        if self._connection is None:
-            raise RuntimeError("No agent connection")
-        # The client-side connection implements the Agent protocol, so the regular
-        # agent dispatcher forwards every method to the subprocess.
-        result = await _agent_handler(self._connection, method, params, is_notification)
-        if isinstance(result, BaseModel):
-            return result.model_dump(by_alias=True, exclude_none=True)
-        return result
+            tg.start_soon(relay, reader, agent_in)
+            tg.start_soon(relay, agent_out, writer)
 
     async def _handle_status(self, request: Request) -> Response:
         """Health check endpoint."""
-        status = "connected" if self._connection else "disconnected"
-        return JSONResponse({"status": status, "command": self.command, "args": self.args})
-
-    def _create_app(self) -> Starlette:
-        """Create the Starlette application."""
-        routes = [
-            Route("/acp", endpoint=self._handle_acp_request, methods=["POST"]),
-            Route("/status", endpoint=self._handle_status, methods=["GET"]),
-        ]
-
-        middleware: list[Middleware] = []
-        if self.settings.allow_origins:
-            mw = Middleware(
-                CORSMiddleware,
-                allow_origins=self.settings.allow_origins,
-                allow_methods=["*"],
-                allow_headers=["*"],
-            )
-            middleware.append(mw)
-        is_debug = self.settings.log_level == "DEBUG"
-        return Starlette(debug=is_debug, routes=routes, middleware=middleware)
+        return JSONResponse({
+            "status": "running",
+            "command": self.command,
+            "args": self.args,
+            "connections": len(self._server.connections),
+        })
 
     async def run(self) -> None:
         """Run the bridge server."""
-        async with contextlib.AsyncExitStack() as stack:
-            # Spawn the stdio agent subprocess
-            logger.info("Spawning ACP agent: %s %s", self.command, " ".join(self.args))
-            coro = spawn_stdio_transport(self.command, *self.args, env=self.env, cwd=self.cwd)
-            reader, writer, process = await stack.enter_async_context(coro)
-            self._process = process
-
-            # Create client connection to the agent
-            def client_factory(agent: Any) -> NoOpClient:
-                return NoOpClient()
-
-            self._connection = ClientSideConnection(client_factory, writer, reader)
-            stack.push_async_callback(self._connection.close)
-            app = self._create_app()  # Create and run the HTTP server
-            config = uvicorn.Config(
-                app,
-                host=self.settings.host,
-                port=self.settings.port,
-                log_level=self.settings.log_level.lower(),
-            )
-            server = uvicorn.Server(config)
-            url = f"http://{self.settings.host}:{self.settings.port}"
-            logger.info("ACP Bridge serving at %s/acp", url)
-            await server.serve()
+        app = self._server.app()
+        app.router.routes.append(Route("/status", self._handle_status, methods=["GET"]))
+        config = uvicorn.Config(
+            app,
+            host=self.settings.host,
+            port=self.settings.port,
+            log_level=self.settings.log_level.lower(),
+        )
+        url = f"http://{self.settings.host}:{self.settings.port}"
+        logger.info("ACP Bridge serving %s %s at %s/acp", self.command, self.args, url)
+        await uvicorn.Server(config).serve()

@@ -57,7 +57,7 @@ uv add aclientp
 | --- | --- |
 | `websocket` | WebSocket transport |
 | `http2` | HTTP/2 for the Streamable HTTP client |
-| `bridge` | `aclientp-bridge`: expose a stdio agent over HTTP / WebSocket |
+| `bridge` | HTTP server transport, `aclientp-bridge`: expose a stdio agent over HTTP / WebSocket |
 | `debug` | `aclientp-debug-server`: a mock agent with a web UI |
 | `tracing` | logfire spans for handled requests |
 
@@ -126,6 +126,21 @@ async with connect_http_transport(url, headers={"X-API-Key": key}) as (reader, w
     conn = ClientSideConnection(lambda agent: MyClient(), writer, reader)
     await conn.initialize(InitializeRequest(protocol_version=1))
 ```
+
+Serving an agent the same way (Streamable HTTP and WebSocket on one endpoint, compatible
+with the TypeScript SDK's experimental clients):
+
+```python
+from aclientp import HttpTransport, serve
+from aclientp.http_server import bearer_token_auth
+
+
+auth = bearer_token_auth(token)
+await serve(lambda conn: MyAgent(conn), HttpTransport(host="0.0.0.0", port=8765, authenticate=auth))
+```
+
+`aclientp-bridge -- my-agent --flag` serves a stdio agent this way, one subprocess per
+connection.
 
 For clients that only launch local agents, `aclientp-connect` relays stdio to a remote
 agent. Header values may reference environment variables:

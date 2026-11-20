@@ -132,6 +132,7 @@ from aclientp.transports import (
     serve,
     StdioTransport,
     WebSocketTransport,
+    HttpTransport,
     StreamTransport,
     Transport,
 )
@@ -289,6 +290,7 @@ __all__ = [  # noqa: RUF022
     "serve",
     "StdioTransport",
     "WebSocketTransport",
+    "HttpTransport",
     "HttpTransportError",
     "connect_http_transport",
     "StreamTransport",
