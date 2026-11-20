@@ -537,7 +537,11 @@ class AcpHttpServer:
 
         owner = await self._caller(websocket)
         if owner is None:
-            await websocket.close(code=1008, reason="Unauthorized")
+            # A real 401 where the server supports denial responses (uvicorn does)
+            if "websocket.http.response" in websocket.scope.get("extensions", {}):
+                await websocket.send_denial_response(_text("Unauthorized", 401))
+            else:
+                await websocket.close(code=1008, reason="Unauthorized")
             return
         connection, agent_input = self._open(owner)
 

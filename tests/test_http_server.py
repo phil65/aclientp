@@ -312,7 +312,7 @@ async def test_bridge_relays_a_stdio_agent(tmp_path: Path) -> None:
 
 async def test_websocket_client_rejected_without_token(url: str) -> None:
     ws_url = url.replace("http://", "ws://")
-    with pytest.raises(WebSocketTransportError, match="rejected"):
+    with pytest.raises(WebSocketTransportError, match=r"rejected \(401\): Unauthorized"):
         async with connect_remote_transport(ws_url):
             pass
 
