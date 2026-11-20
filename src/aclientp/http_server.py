@@ -26,6 +26,10 @@ and the two would deadlock. Clients accept messages on either stream.
 Streams buffer until a receiver attaches and allow one receiver at a time (409). Missed
 messages are not replayed (ACP v1).
 
+Backpressure (like the TypeScript SDK): once a connection holds ``max_buffered_bytes`` of
+output its client has not taken, the agent's writes wait; a client that takes nothing for
+``max_output_stall`` seconds meanwhile is dropped (HTTP and WebSocket alike).
+
 Each connection runs its own agent connection, like the WebSocket transport.
 """
 
@@ -63,6 +67,10 @@ HEADER_SESSION_ID = "acp-session-id"
 JSON_MIME_TYPE = "application/json"
 EVENT_STREAM_MIME_TYPE = "text/event-stream"
 KEEPALIVE_SECONDS = 15.0
+DEFAULT_MAX_BUFFERED_BYTES = 64 * 1024 * 1024
+"""Output a connection may hold for its client before the agent has to wait."""
+DEFAULT_MAX_OUTPUT_STALL_SECONDS = 60.0
+"""How long a client may take nothing while over the limit before the connection closes."""
 INITIALIZE_TIMEOUT_SECONDS = 60.0
 
 SESSION_SCOPED_METHODS = frozenset({
@@ -133,18 +141,57 @@ def _is_request(message: JsonMessage) -> bool:
     return "method" in message and "id" in message
 
 
+class _Backlog:
+    """Output of one connection that its client has not taken yet (all its streams).
+
+    Like the TypeScript SDK: above ``limit`` the agent's writes wait for the client; a
+    client that takes nothing for ``stall`` seconds meanwhile is not coming back for it.
+    """
+
+    def __init__(self, limit: int, stall: float) -> None:
+        self.limit = limit
+        self.stall = stall
+        self.bytes = 0
+        self.closed = False
+        self._progress = asyncio.Event()
+
+    def add(self, size: int) -> None:
+        self.bytes += size
+
+    def taken(self, size: int) -> None:
+        self.bytes -= size
+        self._progress.set()
+
+    def close(self) -> None:
+        self.closed = True
+        self._progress.set()
+
+    async def wait_for_room(self) -> bool:
+        """Wait until the backlog is below the limit (False: the client stalled)."""
+        while self.bytes > self.limit and not self.closed:
+            self._progress.clear()
+            try:
+                async with asyncio.timeout(self.stall):
+                    await self._progress.wait()
+            except TimeoutError:
+                return False
+        return True
+
+
 class _Mailbox:
     """Outbound messages of one stream, buffered until its (single) receiver takes them."""
 
-    def __init__(self) -> None:
+    def __init__(self, backlog: _Backlog) -> None:
         self._queue: deque[str] = deque()
         self._wakeup = asyncio.Event()
+        self._backlog = backlog
         self.has_receiver = False
         self.finished = False
 
     def push(self, text: str) -> None:
         if not self.finished:
             self._queue.append(text)
+            self._backlog.add(len(text))
             self._wakeup.set()
 
     def finish(self) -> None:
@@ -162,7 +209,9 @@ class _Mailbox:
                     await self._wakeup.wait()
             except TimeoutError:
                 return ""
-        return self._queue.popleft()
+        text = self._queue.popleft()
+        self._backlog.taken(len(text))
+        return text
 
 
 class _AgentInput(ByteReceiveStream):
@@ -182,10 +231,21 @@ class _AgentInput(ByteReceiveStream):
 
 
 class _AgentOutput(ByteSendStream):
-    """Splits the agent's newline-delimited JSON into messages for routing."""
+    """Splits the agent's newline-delimited JSON into messages for routing.
 
-    def __init__(self, deliver: Callable[[JsonMessage], None]) -> None:
+    Writes wait while the client is behind (see :class:`_Backlog`); if it stalls, the
+    write fails, which closes the agent connection.
+    """
+
+    def __init__(
+        self,
+        deliver: Callable[[JsonMessage], None],
+        backlog: _Backlog,
+        on_stall: Callable[[], None],
+    ) -> None:
         self._deliver = deliver
+        self._backlog = backlog
+        self._on_stall = on_stall
         self._buffer = b""
 
     async def send(self, item: bytes) -> None:
@@ -200,6 +260,9 @@ class _AgentOutput(ByteSendStream):
                 logger.warning("Dropping non-JSON-object agent output: %.200r", line)
                 continue
             self._deliver(message)
+        if not await self._backlog.wait_for_room():
+            self._on_stall()
+            raise anyio.BrokenResourceError
 
     async def aclose(self) -> None:
         pass
@@ -212,7 +275,8 @@ class _Connection:
     connection_id: str
     owner: str
     to_agent: MemoryObjectSendStream[bytes]
-    connection_stream: _Mailbox = field(default_factory=_Mailbox)
+    backlog: _Backlog
+    connection_stream: _Mailbox = field(init=False)
     session_streams: dict[str, _Mailbox] = field(default_factory=dict)
     pending_routes: dict[str, Route] = field(default_factory=dict)
     """Client request keys -> where the agent's response goes."""
@@ -224,9 +288,12 @@ class _Connection:
     task: asyncio.Task[None] | None = None
     closed: bool = False
 
+    def __post_init__(self) -> None:
+        self.connection_stream = _Mailbox(self.backlog)
+
     def session_stream(self, session_id: str) -> _Mailbox:
         if (stream := self.session_streams.get(session_id)) is None:
-            stream = _Mailbox()
+            stream = _Mailbox(self.backlog)
             if self.closed:
                 stream.finish()
             self.session_streams[session_id] = stream
@@ -260,6 +327,7 @@ class _Connection:
 
     def finish(self) -> None:
         self.closed = True
+        self.backlog.close()
         self.connection_stream.finish()
         for stream in self.session_streams.values():
             stream.finish()
@@ -284,6 +352,10 @@ class AcpHttpServer:
     """Caller identification; None accepts everyone (local use only)."""
     allow_origins: list[str] = field(default_factory=list)
     """CORS origins for browser clients."""
+    max_buffered_bytes: int = DEFAULT_MAX_BUFFERED_BYTES
+    """Output a connection may hold for its client before the agent has to wait."""
+    max_output_stall: float = DEFAULT_MAX_OUTPUT_STALL_SECONDS
+    """Seconds a client may take nothing while over the limit before it is dropped."""
     connections: dict[str, _Connection] = field(default_factory=dict)
 
     def app(self) -> Starlette:
@@ -327,9 +399,27 @@ class AcpHttpServer:
 
     def _open(self, owner: str) -> tuple[_Connection, MemoryObjectReceiveStream[bytes]]:
         send, receive = anyio.create_memory_object_stream[bytes](max_buffer_size=1024)
-        connection = _Connection(connection_id=str(uuid.uuid4()), owner=owner, to_agent=send)
+        backlog = _Backlog(self.max_buffered_bytes, self.max_output_stall)
+        connection = _Connection(
+            connection_id=str(uuid.uuid4()), owner=owner, to_agent=send, backlog=backlog
+        )
         self.connections[connection.connection_id] = connection
         return connection, receive
+
+    def _output(
+        self, connection: _Connection, deliver: Callable[[JsonMessage], None]
+    ) -> _AgentOutput:
+        """The agent's output for a connection; a stalled client drops the connection."""
+
+        def on_stall() -> None:
+            logger.warning(
+                "Closing ACP connection %s: the client took no output for %ss",
+                connection.connection_id,
+                self.max_output_stall,
+            )
+            asyncio.get_running_loop().create_task(self._remove(connection))
+
+        return _AgentOutput(deliver, connection.backlog, on_stall)
 
     def _start(
         self, connection: _Connection, agent_input: ByteReceiveStream, output: ByteSendStream
@@ -479,7 +569,8 @@ class AcpHttpServer:
 
         connection, agent_input = self._open(owner)
         connection.initial_response = asyncio.get_running_loop().create_future()
-        self._start(connection, _AgentInput(agent_input), _AgentOutput(connection.deliver))
+        output = self._output(connection, connection.deliver)
+        self._start(connection, _AgentInput(agent_input), output)
         try:
             await connection.send_to_agent(message)
             async with asyncio.timeout(INITIALIZE_TIMEOUT_SECONDS):
@@ -545,16 +636,21 @@ class AcpHttpServer:
             return
         connection, agent_input = self._open(owner)
 
-        def deliver(message: JsonMessage) -> None:
-            outbox.put_nowait(anyenv.dump_json(message))
+        # Everything goes out on the socket in order; using the connection stream means
+        # ending the connection (agent gone, client stalled) also closes the socket.
+        outbox = connection.connection_stream
 
-        outbox: asyncio.Queue[str] = asyncio.Queue()
-        self._start(connection, _AgentInput(agent_input), _AgentOutput(deliver))
+        def deliver(message: JsonMessage) -> None:
+            outbox.push(anyenv.dump_json(message))
+
+        self._start(connection, _AgentInput(agent_input), self._output(connection, deliver))
         await websocket.accept(headers=[(b"acp-connection-id", connection.connection_id.encode())])
 
         async def pump_out() -> None:
-            while True:
-                await websocket.send_text(await outbox.get())
+            while (text := await outbox.receive(KEEPALIVE_SECONDS)) is not None:
+                if text:  # "" is a keep-alive tick; the socket pings by itself
+                    await websocket.send_text(text)
+            await websocket.close()
 
         sender = asyncio.create_task(pump_out())
         try:
@@ -571,15 +667,14 @@ class AcpHttpServer:
                     continue
                 if isinstance(message, list):
                     error = {"code": -32600, "message": "JSON-RPC batches are not supported"}
-                    await outbox.put(
-                        anyenv.dump_json({"jsonrpc": "2.0", "id": None, "error": error})
-                    )
+                    outbox.push(anyenv.dump_json({"jsonrpc": "2.0", "id": None, "error": error}))
                     continue
                 if isinstance(message, dict):
                     await connection.send_to_agent(message)
         except WebSocketDisconnect:
             pass
         finally:
+            outbox.finish()
             sender.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await sender

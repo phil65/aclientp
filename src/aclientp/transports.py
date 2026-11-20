@@ -78,6 +78,10 @@ class HttpTransport:
         authenticate: Identifies callers (None rejects with 401); connections belong to
             their creator. None accepts every caller, for local use only.
         allow_origins: CORS origins for browser clients.
+        max_buffered_bytes: Output a connection may hold for its client before the agent's
+            writes wait.
+        max_output_stall: Seconds a client may take no output while over that limit
+            before its connection is closed.
     """
 
     host: str = "localhost"
@@ -85,6 +89,8 @@ class HttpTransport:
     path: str = "/acp"
     authenticate: Authenticate | None = None
     allow_origins: list[str] = field(default_factory=list)
+    max_buffered_bytes: int = 64 * 1024 * 1024
+    max_output_stall: float = 60.0
 
 
 @dataclass
@@ -302,6 +308,8 @@ async def _serve_http(
         path=transport.path,
         authenticate=transport.authenticate,
         allow_origins=transport.allow_origins,
+        max_buffered_bytes=transport.max_buffered_bytes,
+        max_output_stall=transport.max_output_stall,
     )
     config = uvicorn.Config(
         server.app(), host=transport.host, port=transport.port, log_level="warning"

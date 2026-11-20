@@ -16,7 +16,7 @@ import pytest
 from aclientp.agent.protocol import Agent
 from aclientp.client.connection import ClientSideConnection
 from aclientp.client.implementations import NoOpClient
-from aclientp.http_server import bearer_token_auth
+from aclientp.http_server import AcpHttpServer, bearer_token_auth
 from aclientp.http_transport import connect_http_transport
 from aclientp.schema import (
     AgentMessageChunk,
@@ -321,3 +321,86 @@ async def test_unsupported_scheme() -> None:
     with pytest.raises(ValueError, match="Unsupported ACP URL"):
         async with connect_remote_transport("ftp://agent.test/acp"):
             pass
+
+
+class FloodAgent(EchoAgent):
+    """Streams many updates per prompt (to fill a slow client's backlog)."""
+
+    async def new_session(self, params: NewSessionRequest) -> NewSessionResponse:
+        return NewSessionResponse(session_id="flood")
+
+    async def prompt(self, params: PromptRequest) -> PromptResponse:
+        for i in range(50):
+            await self._say(params.session_id, f"chunk {i:02d} " + "x" * 80)
+        return PromptResponse(stop_reason="end_turn")
+
+
+@pytest.fixture
+async def flood_server() -> AsyncIterator[tuple[str, AcpHttpServer]]:
+    """A flood agent behind a tiny backlog limit and a short stall timeout."""
+    import uvicorn
+
+    from aclientp.agent.connection import AgentSideConnection
+
+    async def serve_connection(reader: Any, writer: Any) -> None:
+        conn = AgentSideConnection(lambda c: FloodAgent(c), writer, reader)
+        await conn.wait_closed()
+
+    server = AcpHttpServer(serve_connection, max_buffered_bytes=500, max_output_stall=0.5)
+    port = _free_port()
+    config = uvicorn.Config(server.app(), host="127.0.0.1", port=port, log_level="warning")
+    uvicorn_server = uvicorn.Server(config)
+    task = asyncio.create_task(uvicorn_server.serve())
+    while not uvicorn_server.started:
+        await asyncio.sleep(0.01)
+    yield f"http://127.0.0.1:{port}/acp", server
+    uvicorn_server.should_exit = True
+    await asyncio.wait_for(task, TIMEOUT)
+
+
+@pytest.mark.parametrize("scheme", ["http", "ws"])
+async def test_slow_client_gets_everything(
+    flood_server: tuple[str, AcpHttpServer], scheme: str
+) -> None:
+    url, server = flood_server
+    peaks: list[int] = []
+
+    class SlowClient(RecordingClient):
+        async def session_update(self, params: SessionNotification) -> None:
+            peaks.extend(c.backlog.bytes for c in server.connections.values())
+            await asyncio.sleep(0.005)
+            await super().session_update(params)
+
+    recorder = SlowClient()
+    async with connect_remote_transport(url.replace("http://", f"{scheme}://")) as streams:
+        reader, writer = streams
+        conn = ClientSideConnection(lambda _agent: recorder, writer, reader)
+        async with asyncio.timeout(TIMEOUT):
+            await conn.initialize(InitializeRequest(protocol_version=1))
+            await conn.new_session(NewSessionRequest(cwd="/tmp", mcp_servers=[]))
+            prompt = PromptRequest(session_id="flood", prompt=[TextContentBlock(text="go")])
+            result = await conn.prompt(prompt)
+        await conn.close()
+    assert result.stop_reason == "end_turn"
+    assert len(recorder.texts) == 50
+    # The agent waited instead of buffering everything (limit + one message)
+    assert max(peaks) <= 500 + 400
+
+
+async def test_stalled_client_is_dropped(flood_server: tuple[str, AcpHttpServer]) -> None:
+    url, server = flood_server
+    init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": 1}}
+    async with httpx.AsyncClient(timeout=TIMEOUT) as http:
+        response = await http.post(url, json=init)
+        connection_id = response.headers["acp-connection-id"]
+        headers = {"Acp-Connection-Id": connection_id, "Acp-Session-Id": "flood"}
+        params = {"sessionId": "flood", "prompt": [{"type": "text", "text": "go"}]}
+        prompt = {"jsonrpc": "2.0", "id": 2, "method": "session/prompt", "params": params}
+        assert (await http.post(url, json=prompt, headers=headers)).status_code == 202
+        # Nobody reads the session stream: the backlog stays bounded, then the connection goes
+        async with asyncio.timeout(TIMEOUT):
+            while connection_id in server.connections:
+                assert server.connections[connection_id].backlog.bytes <= 500 + 400
+                await asyncio.sleep(0.05)
+        unknown = await http.post(url, json=prompt, headers=headers)
+        assert unknown.status_code == 404
