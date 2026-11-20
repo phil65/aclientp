@@ -2,7 +2,7 @@
 
 [project]
 name = "aclientp"
-version = "0.1.5"
+version = "0.1.6"
 description = "Agent Client Protocol (ACP) for Python: typed v1 and draft v2, checked against the upstream schema"
 readme = "README.md"
 requires-python = ">=3.13"
