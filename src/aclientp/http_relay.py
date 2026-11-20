@@ -1,10 +1,12 @@
-"""Relay a stdio ACP client to a remote agent over Streamable HTTP.
+"""Relay a stdio ACP client to a remote agent (Streamable HTTP or WebSocket).
 
 ACP clients that can only launch local agents (Zed, JetBrains, ...) spawn this as their
 agent; it forwards the newline-delimited JSON-RPC from stdin to the remote ``/acp``
-endpoint and the server's messages back to stdout, unchanged.
+endpoint and the server's messages back to stdout, unchanged. ``http(s)://`` URLs use
+Streamable HTTP, ``ws(s)://`` URLs the WebSocket transport.
 
     aclientp-connect https://example.com/api/acp -H 'X-API-Key: ${MY_API_KEY}'
+    aclientp-connect wss://example.com/acp -H 'Authorization: Bearer ${MY_TOKEN}'
 
 Header values may reference environment variables (``${NAME}``), so secrets can stay in
 the client's agent environment instead of its arguments. stdout carries protocol
@@ -22,8 +24,8 @@ import sys
 
 import anyio
 
-from aclientp.http_transport import connect_http_transport
 from aclientp.stdio import stdio_streams
+from aclientp.ws_transport import WebSocketTransportError, connect_remote_transport
 
 
 logger = logging.getLogger(__name__)
@@ -51,7 +53,7 @@ async def relay(url: str, headers: dict[str, str]) -> None:
     """Forward stdin to the remote agent and its messages to stdout until either side ends."""
     stdin, stdout = await stdio_streams()
     async with (
-        connect_http_transport(url, headers=headers) as (remote_reader, remote_writer),
+        connect_remote_transport(url, headers=headers) as (remote_reader, remote_writer),
         anyio.create_task_group() as tg,
     ):
 
@@ -71,9 +73,9 @@ async def relay(url: str, headers: dict[str, str]) -> None:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="aclientp-connect",
-        description="Relay a stdio ACP client to a remote agent over Streamable HTTP.",
+        description="Relay a stdio ACP client to a remote agent (Streamable HTTP or WebSocket).",
     )
-    parser.add_argument("url", help="The agent's /acp endpoint")
+    parser.add_argument("url", help="The agent's /acp endpoint (http(s):// or ws(s)://)")
     parser.add_argument(
         "-H",
         "--header",
@@ -88,8 +90,14 @@ def main(argv: list[str] | None = None) -> None:
         headers = dict(parse_header(raw) for raw in args.header)
     except ValueError as exc:
         parser.error(str(exc))
-    with contextlib.suppress(KeyboardInterrupt):
-        anyio.run(relay, args.url, headers)
+    if not args.url.lower().startswith(("http://", "https://", "ws://", "wss://")):
+        parser.error(f"Unsupported URL {args.url!r}: use http(s):// or ws(s)://")
+    try:
+        with contextlib.suppress(KeyboardInterrupt):
+            anyio.run(relay, args.url, headers)
+    except WebSocketTransportError as exc:
+        print(f"aclientp-connect: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

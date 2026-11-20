@@ -128,6 +128,11 @@ from aclientp.schema import (
 )
 from aclientp.stdio import stdio_streams, run_agent, connect_to_agent
 from aclientp.http_transport import HttpTransportError, connect_http_transport
+from aclientp.ws_transport import (
+    WebSocketTransportError,
+    connect_remote_transport,
+    connect_websocket_transport,
+)
 from aclientp.transports import (
     serve,
     StdioTransport,
@@ -293,6 +298,9 @@ __all__ = [  # noqa: RUF022
     "HttpTransport",
     "HttpTransportError",
     "connect_http_transport",
+    "WebSocketTransportError",
+    "connect_remote_transport",
+    "connect_websocket_transport",
     "StreamTransport",
     "Transport",
 ]

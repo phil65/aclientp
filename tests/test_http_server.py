@@ -35,6 +35,7 @@ from aclientp.schema import (
     ToolCallUpdate,
 )
 from aclientp.transports import HttpTransport, serve
+from aclientp.ws_transport import WebSocketTransportError, connect_remote_transport
 
 
 if TYPE_CHECKING:
@@ -139,9 +140,11 @@ async def url(request: pytest.FixtureRequest) -> AsyncIterator[str]:
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
-async def test_http_client_full_flow_and_reattach(url: str) -> None:
+@pytest.mark.parametrize("scheme", ["http", "ws"])
+async def test_client_full_flow_and_reattach(url: str, scheme: str) -> None:
+    url = url.replace("http://", f"{scheme}://")
     recorder = RecordingClient()
-    async with connect_http_transport(url, headers=AUTH) as (reader, writer):
+    async with connect_remote_transport(url, headers=AUTH) as (reader, writer):
         conn = ClientSideConnection(lambda _agent: recorder, writer, reader)
         async with asyncio.timeout(TIMEOUT):
             init = await conn.initialize(InitializeRequest(protocol_version=1))
@@ -156,7 +159,7 @@ async def test_http_client_full_flow_and_reattach(url: str) -> None:
 
     # A new connection reattaches the session; the replay arrives on its session stream
     recorder = RecordingClient()
-    async with connect_http_transport(url, headers=AUTH) as (reader, writer):
+    async with connect_remote_transport(url, headers=AUTH) as (reader, writer):
         conn = ClientSideConnection(lambda _agent: recorder, writer, reader)
         async with asyncio.timeout(TIMEOUT):
             await conn.initialize(InitializeRequest(protocol_version=1))
@@ -305,3 +308,16 @@ async def test_bridge_relays_a_stdio_agent(tmp_path: Path) -> None:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+
+
+async def test_websocket_client_rejected_without_token(url: str) -> None:
+    ws_url = url.replace("http://", "ws://")
+    with pytest.raises(WebSocketTransportError, match="rejected"):
+        async with connect_remote_transport(ws_url):
+            pass
+
+
+async def test_unsupported_scheme() -> None:
+    with pytest.raises(ValueError, match="Unsupported ACP URL"):
+        async with connect_remote_transport("ftp://agent.test/acp"):
+            pass

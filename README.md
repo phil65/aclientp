@@ -113,16 +113,18 @@ test fields with `is_set` (`MISSING` is truthy).
 
 ### Remote agents over Streamable HTTP (experimental)
 
-`connect_http_transport` is the client side of ACP's Streamable HTTP transport (the
+`connect_remote_transport` is the client side of ACP's remote transports (the
 "Streamable HTTP & WebSocket Transport" RFD), compatible with the TypeScript SDK's
-experimental server. It yields byte streams like a stdio agent's:
+experimental server: `http(s)://` URLs use Streamable HTTP (`connect_http_transport`),
+`ws(s)://` URLs the WebSocket transport (`connect_websocket_transport`, needs the
+`websocket` extra). It yields byte streams like a stdio agent's:
 
 ```python
-from aclientp import connect_http_transport
+from aclientp import connect_remote_transport
 from aclientp.client.connection import ClientSideConnection
 
 
-async with connect_http_transport(url, headers={"X-API-Key": key}) as (reader, writer):
+async with connect_remote_transport(url, headers={"X-API-Key": key}) as (reader, writer):
     conn = ClientSideConnection(lambda agent: MyClient(), writer, reader)
     await conn.initialize(InitializeRequest(protocol_version=1))
 ```
@@ -143,7 +145,8 @@ await serve(lambda conn: MyAgent(conn), HttpTransport(host="0.0.0.0", port=8765,
 connection.
 
 For clients that only launch local agents, `aclientp-connect` relays stdio to a remote
-agent. Header values may reference environment variables:
+agent (either transport, by URL scheme). Header values may reference environment
+variables:
 
 ```json
 {
