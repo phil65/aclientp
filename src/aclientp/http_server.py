@@ -17,6 +17,12 @@ Routing: a response goes where its request came from (the session named by the r
 or the connection), except ``session/load``, which is answered on the connection stream.
 Agent requests and notifications naming a session go to that session's stream, others to
 the connection's; the client's answers to agent requests must name the same session.
+
+One deviation from the RFD: messages for a session the client cannot know yet (no
+response, client message or stream has named it) go to the connection stream. Otherwise
+an agent request made while handling ``session/new`` (e.g. running a command in a client
+terminal) would wait for a session stream the client can only open after that response,
+and the two would deadlock. Clients accept messages on either stream.
 Streams buffer until a receiver attaches and allow one receiver at a time (409). Missed
 messages are not replayed (ACP v1).
 
@@ -108,6 +114,13 @@ def _id_key(message_id: object) -> str | None:
 def _params_session_id(message: JsonMessage) -> str | None:
     params = message.get("params")
     if isinstance(params, dict) and isinstance(session_id := params.get("sessionId"), str):
+        return session_id
+    return None
+
+
+def _result_session_id(message: JsonMessage) -> str | None:
+    result = message.get("result")
+    if isinstance(result, dict) and isinstance(session_id := result.get("sessionId"), str):
         return session_id
     return None
 
@@ -205,6 +218,8 @@ class _Connection:
     """Client request keys -> where the agent's response goes."""
     client_response_routes: dict[str, Route] = field(default_factory=dict)
     """Agent request keys -> the session the client must answer in."""
+    known_sessions: set[str] = field(default_factory=set)
+    """Sessions the client can know: named by a response, a client message or a stream."""
     initial_response: asyncio.Future[JsonMessage] | None = None
     task: asyncio.Task[None] | None = None
     closed: bool = False
@@ -226,8 +241,15 @@ class _Connection:
                 future.set_result(message)
                 return
             route = self.pending_routes.pop(key, None) if key is not None else None
+            if (session_id := _result_session_id(message)) is not None:
+                self.known_sessions.add(session_id)
         else:
             route = _params_session_id(message)
+            # A session the client can't know yet (e.g. an agent request made while it
+            # handles the session/new that creates it) has no stream the client could
+            # open, so its messages use the connection stream instead of waiting forever.
+            if route is not None and route not in self.known_sessions:
+                route = None
             if _is_request(message) and key is not None:
                 self.client_response_routes[key] = route
         stream = self.connection_stream if route is None else self.session_stream(route)
@@ -431,6 +453,8 @@ class AcpHttpServer:
         ):
             return "Mismatched Acp-Session-Id"
         route = header_session or params_session
+        if route is not None:
+            connection.known_sessions.add(route)
         if _is_request(message) and (key := _id_key(message.get("id"))) is not None:
             connection.pending_routes[key] = None if method == "session/load" else route
         return None
@@ -484,6 +508,8 @@ class AcpHttpServer:
         if connection is None:
             return _text("Unknown Acp-Connection-Id", 404)
         session_id = request.headers.get(HEADER_SESSION_ID)
+        if session_id is not None:
+            connection.known_sessions.add(session_id)
         stream = (
             connection.connection_stream
             if session_id is None

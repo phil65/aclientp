@@ -83,6 +83,19 @@ class EchoAgent(Agent):
         await self.conn.session_update(SessionNotification(session_id=session_id, update=update))
 
 
+class SetupRequestAgent(EchoAgent):
+    """Asks the client something while it creates the session (before answering)."""
+
+    async def new_session(self, params: NewSessionRequest) -> NewSessionResponse:
+        session_id = f"sess-{uuid.uuid4().hex[:8]}"
+        option = PermissionOption(option_id="allow", name="Allow", kind="allow_once")
+        request = RequestPermissionRequest(
+            session_id=session_id, tool_call=ToolCallUpdate(tool_call_id="setup"), options=[option]
+        )
+        await self.conn.request_permission(request)
+        return NewSessionResponse(session_id=session_id)
+
+
 class RecordingClient(NoOpClient):
     def __init__(self) -> None:
         self.texts: list[str] = []
@@ -102,12 +115,13 @@ def _free_port() -> int:
         return port
 
 
-@pytest.fixture
-async def url() -> AsyncIterator[str]:
+@pytest.fixture(params=[EchoAgent, SetupRequestAgent], ids=["echo", "setup-request"])
+async def url(request: pytest.FixtureRequest) -> AsyncIterator[str]:
+    agent_type: type[EchoAgent] = request.param
     port = _free_port()
     shutdown = asyncio.Event()
     transport = HttpTransport(host="127.0.0.1", port=port, authenticate=bearer_token_auth(TOKEN))
-    agent = serve(lambda conn: EchoAgent(conn), transport, shutdown_event=shutdown)
+    agent = serve(lambda conn: agent_type(conn), transport, shutdown_event=shutdown)
     task = asyncio.create_task(agent)
     endpoint = f"http://127.0.0.1:{port}/acp"
     async with httpx.AsyncClient() as http:
