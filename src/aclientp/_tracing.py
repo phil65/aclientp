@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, LiteralString
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-def instrument[**P, R](message: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def instrument[**P, R](message: LiteralString) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Trace calls of the decorated function with ``logfire.instrument`` if available.
 
     Install the ``tracing`` extra (``aclientp[tracing]``) to get spans.
