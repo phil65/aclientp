@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from aclientp.agent.connection import AgentSideConnection as V1AgentSideConnection
 from aclientp.connection import Connection
 from aclientp.exceptions import RequestError
+from aclientp.task import DebuggingMessageStateStore
 from aclientp.v2.agent import AgentSideConnection as V2AgentSideConnection
 
 
@@ -42,6 +43,7 @@ class RoutedAgentConnection:
         v1: Callable[[V1AgentSideConnection], V1Agent] | V1Agent | None = None,
         v2: Callable[[V2AgentSideConnection], V2Agent] | V2Agent | None = None,
         observers: list[StreamObserver] | None = None,
+        debug_file: str | None = None,
     ) -> None:
         """Start routing a connection.
 
@@ -51,6 +53,7 @@ class RoutedAgentConnection:
             v1: The v1 agent, or a factory receiving its connection.
             v2: The v2 agent, or a factory receiving its connection.
             observers: Observers of the raw messages.
+            debug_file: File to log every message to, as ``AgentSideConnection`` does.
         """
         if v1 is None and v2 is None:
             msg = "configure at least one of the v1 and v2 agents"
@@ -62,10 +65,12 @@ class RoutedAgentConnection:
         """The selected protocol version; ``None`` until ``initialize`` arrived."""
         self.v1_side: V1AgentSideConnection | None = None
         self.v2_side: V2AgentSideConnection | None = None
+        store = DebuggingMessageStateStore(debug_file=debug_file) if debug_file else None
         self._conn = Connection(
             self._route,
             input_stream,
             output_stream,
+            state_store=store,
             observers=observers,
             reject_batches=True,
         )

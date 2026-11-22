@@ -28,7 +28,10 @@ if TYPE_CHECKING:
 
     from aclientp.agent.connection import AgentSideConnection
     from aclientp.agent.protocol import Agent
+    from aclientp.connection import StreamObserver
     from aclientp.http_server import Authenticate
+    from aclientp.router import RoutedAgentConnection
+    from aclientp.v2.agent import Agent as V2Agent, AgentSideConnection as V2AgentSideConnection
 
 logger = logging.getLogger(__name__)
 
@@ -123,30 +126,80 @@ Transport = (
 # =============================================================================
 
 
+type V1AgentSource = Agent | Callable[[AgentSideConnection], Agent]
+"""A v1 agent, or a factory receiving its connection."""
+
+type V2AgentSource = V2Agent | Callable[[V2AgentSideConnection], V2Agent]
+"""A v2 agent, or a factory receiving its connection."""
+
+
+@dataclass(frozen=True, slots=True)
+class _AgentSpec:
+    """What every transport needs to serve one client connection."""
+
+    v1: V1AgentSource | None
+    v2: V2AgentSource | None
+    debug_file: str | None
+    observers: list[StreamObserver] | None
+
+    def connect(
+        self, writer: ByteSendStream, reader: ByteReceiveStream
+    ) -> AgentSideConnection | RoutedAgentConnection:
+        """Serve a client: plain v1, or routed by ``initialize`` once a v2 agent is given."""
+        from aclientp.agent.connection import AgentSideConnection
+        from aclientp.router import RoutedAgentConnection
+
+        if self.v2 is None:
+            assert self.v1 is not None  # Checked by serve()
+            return AgentSideConnection(
+                _ensure_factory(self.v1),
+                writer,
+                reader,
+                observers=self.observers,
+                debug_file=self.debug_file,
+            )
+        return RoutedAgentConnection(
+            writer,
+            reader,
+            v1=None if self.v1 is None else _ensure_factory(self.v1),
+            v2=self.v2,
+            observers=self.observers,
+            debug_file=self.debug_file,
+        )
+
+
 async def serve(
-    agent: Agent | Callable[[AgentSideConnection], Agent],
+    agent: V1AgentSource | None = None,
     transport: Transport = "stdio",
     *,
+    v2_agent: V2AgentSource | None = None,
     shutdown_event: asyncio.Event | None = None,
     debug_file: str | None = None,
-    **kwargs: Any,
+    observers: list[StreamObserver] | None = None,
 ) -> None:
     """Run an ACP agent with the specified transport.
 
     This is the main entry point for running ACP agents. It handles transport
     setup and lifecycle management automatically.
 
+    With only ``agent``, every client is served by that v1 agent. With ``v2_agent``,
+    each client connection is routed on ``initialize``
+    (:class:`~aclientp.router.RoutedAgentConnection`): clients asking for v2 or later
+    get the v2 agent, others the v1 agent (if given).
+
     Args:
-        agent: An Agent implementation or a factory callable that takes
-            an AgentSideConnection and returns an Agent.
+        agent: The v1 agent, or a factory that takes an AgentSideConnection and
+            returns one.
         transport: Transport configuration. Can be:
             - "stdio" or StdioTransport(): Use stdin/stdout
             - "websocket" or WebSocketTransport(...): Run WebSocket server
             - StreamTransport(...): Use custom streams
+        v2_agent: The v2 agent, or a factory that takes a v2 AgentSideConnection and
+            returns one.
         shutdown_event: Optional event to signal shutdown. If not provided,
             runs until cancelled.
         debug_file: Optional file path for debug message logging.
-        **kwargs: Additional keyword arguments passed to AgentSideConnection.
+        observers: Observers of the raw messages of each connection.
 
     Example:
         ```python
@@ -156,6 +209,9 @@ async def serve(
         # WebSocket server
         await serve(MyAgent(), WebSocketTransport(host="0.0.0.0", port=9000))
 
+        # v1 and v2 clients on one endpoint
+        await serve(MyAgent(), v2_agent=MyV2Agent)
+
         # With shutdown control
         shutdown = asyncio.Event()
         task = asyncio.create_task(serve(MyAgent(), shutdown_event=shutdown))
@@ -164,6 +220,10 @@ async def serve(
         await task
         ```
     """
+    if agent is None and v2_agent is None:
+        msg = "serve() needs a v1 agent, a v2 agent, or both"
+        raise ValueError(msg)
+    spec = _AgentSpec(v1=agent, v2=v2_agent, debug_file=debug_file, observers=observers)
     # Normalize string shortcuts to config objects
     match transport:
         case "stdio":
@@ -176,19 +236,19 @@ async def serve(
     # Dispatch to appropriate runner
     match transport:
         case StdioTransport():
-            await _serve_stdio(agent, shutdown_event, debug_file, **kwargs)
+            await _serve_stdio(spec, shutdown_event)
         case WebSocketTransport(host=host, port=port):
-            await _serve_websocket(agent, host, port, shutdown_event, debug_file, **kwargs)
+            await _serve_websocket(spec, host, port, shutdown_event)
         case HttpTransport():
-            await _serve_http(agent, transport, shutdown_event, debug_file, **kwargs)
+            await _serve_http(spec, transport, shutdown_event)
         case StreamTransport(reader=reader, writer=writer):
-            await _serve_streams(agent, reader, writer, shutdown_event, debug_file, **kwargs)
+            await _serve_streams(spec, reader, writer, shutdown_event)
         case _ as unreachable:
             assert_never(unreachable)
 
 
 async def _run_until_closed(
-    conn: AgentSideConnection, shutdown_event: asyncio.Event | None
+    conn: AgentSideConnection | RoutedAgentConnection, shutdown_event: asyncio.Event | None
 ) -> None:
     """Keep the connection open until the peer disconnects, shutdown is signalled or cancelled."""
     waiters: set[asyncio.Task[Any]] = {asyncio.create_task(conn.wait_closed())}
@@ -205,55 +265,35 @@ async def _run_until_closed(
         await conn.close()
 
 
-async def _serve_stdio(
-    agent: Agent | Callable[[AgentSideConnection], Agent],
-    shutdown_event: asyncio.Event | None,
-    debug_file: str | None,
-    **kwargs: Any,
-) -> None:
+async def _serve_stdio(spec: _AgentSpec, shutdown_event: asyncio.Event | None) -> None:
     """Run agent over stdio."""
-    from aclientp.agent.connection import AgentSideConnection
     from aclientp.stdio import stdio_streams
 
-    agent_factory = _ensure_factory(agent)
     reader, writer = await stdio_streams()
-
-    conn = AgentSideConnection(agent_factory, writer, reader, debug_file=debug_file, **kwargs)
-    await _run_until_closed(conn, shutdown_event)
+    await _run_until_closed(spec.connect(writer, reader), shutdown_event)
 
 
 async def _serve_streams(
-    agent: Agent | Callable[[AgentSideConnection], Agent],
+    spec: _AgentSpec,
     reader: ByteReceiveStream,
     writer: ByteSendStream,
     shutdown_event: asyncio.Event | None,
-    debug_file: str | None,
-    **kwargs: Any,
 ) -> None:
     """Run agent over custom streams."""
-    from aclientp.agent.connection import AgentSideConnection
-
-    agent_factory = _ensure_factory(agent)
-    conn = AgentSideConnection(agent_factory, writer, reader, debug_file=debug_file, **kwargs)
-    await _run_until_closed(conn, shutdown_event)
+    await _run_until_closed(spec.connect(writer, reader), shutdown_event)
 
 
 async def _serve_websocket(
-    agent: Agent | Callable[[AgentSideConnection], Agent],
+    spec: _AgentSpec,
     host: str,
     port: int,
     shutdown_event: asyncio.Event | None,
-    debug_file: str | None,
-    **kwargs: Any,
 ) -> None:
     """Run agent as WebSocket server."""
     import websockets
 
-    from aclientp.agent.connection import AgentSideConnection
-
-    agent_factory = _ensure_factory(agent)
     shutdown = shutdown_event or asyncio.Event()
-    connections: list[AgentSideConnection] = []
+    connections: list[AgentSideConnection | RoutedAgentConnection] = []
 
     async def handle_client(websocket: ServerConnection) -> None:
         """Handle a single WebSocket client connection."""
@@ -263,9 +303,7 @@ async def _serve_websocket(
         ws_reader = _WebSocketReadStream(websocket)
         ws_writer = _WebSocketWriteStream(websocket)
 
-        conn = AgentSideConnection(
-            agent_factory, ws_writer, ws_reader, debug_file=debug_file, **kwargs
-        )
+        conn = spec.connect(ws_writer, ws_reader)
         connections.append(conn)
         try:
             # The reader turns a closed socket into EOF, which closes the connection.
@@ -285,23 +323,17 @@ async def _serve_websocket(
 
 
 async def _serve_http(
-    agent: Agent | Callable[[AgentSideConnection], Agent],
+    spec: _AgentSpec,
     transport: HttpTransport,
     shutdown_event: asyncio.Event | None,
-    debug_file: str | None,
-    **kwargs: Any,
 ) -> None:
     """Run agent as a Streamable HTTP & WebSocket server."""
     import uvicorn
 
-    from aclientp.agent.connection import AgentSideConnection
     from aclientp.http_server import AcpHttpServer
 
-    agent_factory = _ensure_factory(agent)
-
     async def serve_connection(reader: ByteReceiveStream, writer: ByteSendStream) -> None:
-        conn = AgentSideConnection(agent_factory, writer, reader, debug_file=debug_file, **kwargs)
-        await _run_until_closed(conn, None)
+        await _run_until_closed(spec.connect(writer, reader), None)
 
     server = AcpHttpServer(
         serve_connection,
