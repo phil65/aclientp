@@ -537,9 +537,12 @@ async def spawn_stdio_transport(
         log_stderr: If True, read stderr in background and log each line.
         stderr_log_level: Log level for stderr output (default WARNING).
         on_stderr: Called with each stderr line (read in background), e.g. to show
-            it in a UI. With ``stderr=PIPE``, pass this or ``log_stderr`` (or read
-            ``process.stderr`` yourself): a pipe nobody reads fills up and blocks
-            the agent.
+            it in a UI.
+
+    With ``stderr=PIPE`` (the default), stderr is always read in the background, so
+    an agent writing a lot to it can never block on a full pipe: lines go to
+    ``on_stderr`` and / or the log, and are discarded otherwise. To read
+    ``process.stderr`` yourself, pass another ``stderr`` (e.g. a file) instead.
     """
     merged_env = default_environment()
     if env:
@@ -560,7 +563,7 @@ async def spawn_stdio_transport(
         raise RuntimeError("spawn_stdio_transport requires stdout/stdin pipes")
 
     stderr_task: asyncio.Task[None] | None = None
-    if (log_stderr or on_stderr is not None) and process.stderr is not None:
+    if process.stderr is not None and stderr == subprocess.PIPE:
         stderr_task = asyncio.create_task(
             _drain_stderr_to_log(
                 process, command, stderr_log_level, log=log_stderr, on_stderr=on_stderr

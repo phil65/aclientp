@@ -12,9 +12,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
+
 from aclientp.connection import Connection
-from aclientp.exceptions import ProtocolVersionError, RequestError
-from aclientp.schema.v2.base import to_wire
+from aclientp.exceptions import InvalidResponseError, ProtocolVersionError, RequestError
+from aclientp.schema.v2.base import JsonValue, to_wire
 from aclientp.schema.v2.protocol import AGENT_REQUESTS, CLIENT_NOTIFICATIONS, CLIENT_REQUESTS
 from aclientp.v2.agent import PROTOCOL_VERSION
 
@@ -104,8 +106,8 @@ class Client:
         """Handle an ``mcp/message`` request."""
         raise RequestError.method_not_found("mcp/message")
 
-    async def ext_method(self, method: str, params: Any) -> Any:
-        """Handle a custom (``_``-prefixed) request."""
+    async def ext_method(self, method: str, params: JsonValue) -> JsonValue:
+        """Handle a custom (``_``-prefixed) request; ``params`` is ``None`` if omitted."""
         raise RequestError.method_not_found(method)
 
     async def session_update(self, params: UpdateSessionNotification) -> None:
@@ -120,8 +122,8 @@ class Client:
     async def mcp_notification(self, params: MessageMcpNotification) -> None:
         """Handle an ``mcp/message`` notification."""
 
-    async def ext_notification(self, method: str, params: Any) -> None:
-        """Handle a custom (``_``-prefixed) notification."""
+    async def ext_notification(self, method: str, params: JsonValue) -> None:
+        """Handle a custom (``_``-prefixed) notification; ``params`` is ``None`` if omitted."""
 
 
 def _request_handlers(client: Client) -> dict[str, Callable[[Any], Awaitable[BaseModel]]]:
@@ -204,7 +206,10 @@ class ClientSideConnection:
 
     async def _request(self, method: str, params: BaseModel) -> Any:
         result = await self._conn.send_request(method, to_wire(params))
-        return AGENT_REQUESTS[method].result.validate_python(result)
+        try:
+            return AGENT_REQUESTS[method].result.validate_python(result)
+        except ValidationError as exc:
+            raise InvalidResponseError.from_validation_error(method, exc) from exc
 
     # --- Calls to the agent ---------------------------------------------------------
 
@@ -220,7 +225,12 @@ class ClientSideConnection:
         received = result.get("protocolVersion") if isinstance(result, dict) else None
         if received != PROTOCOL_VERSION:
             raise ProtocolVersionError(PROTOCOL_VERSION, received, result)
-        response: InitializeResponse = AGENT_REQUESTS["initialize"].result.validate_python(result)
+        try:
+            response: InitializeResponse = AGENT_REQUESTS["initialize"].result.validate_python(
+                result
+            )
+        except ValidationError as exc:
+            raise InvalidResponseError.from_validation_error("initialize", exc) from exc
         self.initialize_response = response
         return response
 
@@ -346,11 +356,11 @@ class ClientSideConnection:
         """Send an ``mcp/message`` notification to the agent."""
         await self._conn.send_notification("mcp/message", to_wire(params))
 
-    async def ext_method(self, method: str, params: Any) -> Any:
+    async def ext_method(self, method: str, params: JsonValue = None) -> JsonValue:
         """Send a custom (``_``-prefixed) request."""
         return await self._conn.send_request(method, params)
 
-    async def ext_notification(self, method: str, params: Any) -> None:
+    async def ext_notification(self, method: str, params: JsonValue = None) -> None:
         """Send a custom (``_``-prefixed) notification."""
         await self._conn.send_notification(method, params)
 

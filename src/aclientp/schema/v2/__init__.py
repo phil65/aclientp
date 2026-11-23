@@ -8,7 +8,15 @@ is sent as ``null``; serialize with :func:`to_wire` and test fields with :func:`
 
 from pydantic import MISSING
 
-from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Schema, Unknown, is_set, to_wire
+from aclientp.schema.v2.base import (
+    OTHER_TAG,
+    AnnotatedObject,
+    JsonValue,
+    Schema,
+    Unknown,
+    is_set,
+    to_wire,
+)
 from aclientp.schema.v2.auth import (
     AuthAccount,
     AuthMethod,
@@ -25,6 +33,7 @@ from aclientp.schema.v2.auth import (
     UnknownAuthMethod,
 )
 from aclientp.schema.v2.capabilities import (
+    supports,
     AgentAuthCapabilities,
     AgentCapabilities,
     AuthStatusCapabilities,
@@ -557,6 +566,7 @@ __all__ = [
     "InitializeRequest",
     "InitializeResponse",
     "IntegerPropertySchema",
+    "JsonValue",
     "ListProvidersRequest",
     "ListProvidersResponse",
     "ListSessionsRequest",
@@ -770,5 +780,6 @@ __all__ = [
     "UserMessageChunk",
     "UserMessageCursorAnchor",
     "is_set",
+    "supports",
     "to_wire",
 ]

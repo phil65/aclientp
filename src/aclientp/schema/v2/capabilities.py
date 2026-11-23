@@ -8,8 +8,28 @@ subagent sessions) live with those objects.
 from __future__ import annotations
 
 from pydantic import MISSING
+from pydantic.alias_generators import to_snake
 
 from aclientp.schema.v2.base import AnnotatedObject
+
+
+def supports(capabilities: AnnotatedObject | MISSING | None, path: str) -> bool:
+    """Whether a capability marker is present, by its dotted wire path.
+
+    ``path`` uses the spec's camelCase names, e.g.
+    ``supports(init.capabilities, "session.systemPrompt.mode.override")``. Every
+    object on the way must be present: omitted (``MISSING``) or ``null`` at any
+    level means not supported. Unknown names mean not supported.
+    """
+    node: object = capabilities
+    for name in path.split("."):
+        if node is MISSING or node is None or not isinstance(node, AnnotatedObject):
+            return False
+        attr = to_snake(name)
+        if attr not in type(node).model_fields:
+            return False
+        node = getattr(node, attr)
+    return node is not MISSING and node is not None
 
 
 class TerminalAuthCapabilities(AnnotatedObject):

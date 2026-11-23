@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
+
+
+if TYPE_CHECKING:
+    from pydantic import ValidationError
+    from pydantic_core import ErrorDetails
 
 
 class RequestError(Exception):
@@ -76,6 +81,27 @@ class RequestError(Exception):
 
     def to_error_obj(self) -> dict[str, Any]:
         return {"code": self.code, "message": str(self), "data": self.data}
+
+
+class InvalidResponseError(RequestError):
+    """The peer answered a request with a result that does not match the method's schema.
+
+    Raised by the typed v2 calls instead of a bare ``pydantic.ValidationError``, which
+    is kept as ``__cause__``. Code ``-32603`` (Internal error); ``data`` holds the
+    method and the validation errors.
+    """
+
+    def __init__(self, method: str, errors: list[ErrorDetails]) -> None:
+        super().__init__(-32603, "Invalid response", {"method": method, "errors": errors})
+        self.method = method
+        """The method whose response was invalid."""
+        self.errors = errors
+        """The validation errors (pydantic's ``errors()``, without URLs and contexts)."""
+
+    @classmethod
+    def from_validation_error(cls, method: str, exc: ValidationError) -> InvalidResponseError:
+        """Build the error from a pydantic validation error."""
+        return cls(method, exc.errors(include_url=False, include_context=False))
 
 
 class ProtocolVersionError(RequestError):

@@ -6,10 +6,11 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 import anyio
+from pydantic import ValidationError
 import pytest
 
 from aclientp.agent.implementations.testing import TestAgent as V1TestAgent
-from aclientp.exceptions import ProtocolVersionError, RequestError
+from aclientp.exceptions import InvalidResponseError, ProtocolVersionError, RequestError
 from aclientp.router import RoutedAgentConnection
 from aclientp.schema.v2 import (
     AgentMessageChunk,
@@ -17,6 +18,7 @@ from aclientp.schema.v2 import (
     Implementation,
     InitializeRequest,
     InitializeResponse,
+    JsonValue,
     ListProvidersRequest,
     NewSessionRequest,
     NewSessionResponse,
@@ -278,3 +280,61 @@ async def test_client_reports_a_v1_agent_as_protocol_version_error() -> None:
     assert exc_info.value.result == v1_result
     assert conn.initialize_response is None
     await conn.close()
+
+
+async def test_invalid_responses_raise_invalid_response_error() -> None:
+    writer, reader, peer = make_streams()
+    conn = ClientSideConnection(RecordingClient(), writer, reader)
+    init = asyncio.create_task(conn.initialize(InitializeRequest(protocol_version=2, info=INFO)))
+    request = await peer.receive()
+    await peer.send({"jsonrpc": "2.0", "id": request["id"], "result": {"protocolVersion": 2}})
+
+    with pytest.raises(InvalidResponseError) as exc_info:
+        await asyncio.wait_for(init, TIMEOUT)
+
+    assert isinstance(exc_info.value, RequestError)
+    assert exc_info.value.method == "initialize"
+    assert exc_info.value.code == -32603
+    assert isinstance(exc_info.value.__cause__, ValidationError)
+    assert any(error["loc"] == ("info",) for error in exc_info.value.errors)
+    await conn.close()
+
+
+class ExtAgent(EchoAgent):
+    """Answers custom requests with JSON."""
+
+    def __init__(self, conn: AgentSideConnection) -> None:
+        super().__init__(conn)
+        self.notes: list[JsonValue] = []
+
+    async def ext_method(self, method: str, params: JsonValue) -> JsonValue:
+        return {"method": method, "echo": params}
+
+    async def ext_notification(self, method: str, params: JsonValue) -> None:
+        self.notes.append(params)
+
+
+async def test_extension_methods_carry_json() -> None:
+    to_agent_writer, to_agent_reader = _pipe()
+    to_client_writer, to_client_reader = _pipe()
+    agents: list[ExtAgent] = []
+
+    def make_agent(conn: AgentSideConnection) -> ExtAgent:
+        agents.append(ExtAgent(conn))
+        return agents[-1]
+
+    agent_conn = AgentSideConnection(make_agent, to_client_writer, to_agent_reader)
+    client_conn = ClientSideConnection(RecordingClient(), to_agent_writer, to_client_reader)
+    await client_conn.initialize(InitializeRequest(protocol_version=2, info=INFO))
+
+    result = await asyncio.wait_for(
+        client_conn.ext_method("_x/hello", {"n": [1, 2.5, None]}), TIMEOUT
+    )
+    await client_conn.ext_notification("_x/note", ["a"])
+    await client_conn.ext_notification("_x/empty")
+    await asyncio.sleep(0.05)
+
+    assert result == {"method": "_x/hello", "echo": {"n": [1, 2.5, None]}}
+    assert agents[0].notes == [["a"], None]
+    await client_conn.close()
+    await agent_conn.close()

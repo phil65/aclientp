@@ -110,6 +110,25 @@ the rest answer `-32601`. v2 models follow the v2 patch rules: optional fields d
 to `MISSING` and are left out, `None` is sent as `null`. Serialize with `to_wire` and
 test fields with `is_set` (`MISSING` is truthy).
 
+A v2 client subclasses `aclientp.v2.client.Client` and talks through
+`aclientp.v2.client.ClientSideConnection`:
+
+- `initialize` raises `ProtocolVersionError` (with `.received` and the raw `.result`)
+  when the agent answers with another protocol version, e.g. a v1-only agent.
+- Every typed call raises `InvalidResponseError` (a `RequestError`, code `-32603`, with
+  `.method`, `.errors` and the `pydantic.ValidationError` as `__cause__`) when the peer's
+  result does not match the method's schema. The agent side's calls to the client do the
+  same.
+- Custom (`_`-prefixed) methods and notifications take and return `JsonValue` on both
+  sides; omitted params arrive as `None`.
+- `supports(capabilities, "session.systemPrompt.mode.override")` tests a capability
+  marker by its dotted camelCase path (omitted or `null` anywhere on the path means
+  unsupported).
+
+`spawn_stdio_transport` always reads a piped stderr in the background, so an agent
+can never block on a full pipe: pass `on_stderr=` for the lines (or `log_stderr=True`),
+otherwise they are discarded. To read stderr yourself, pass another `stderr=`.
+
 ### Remote agents over Streamable HTTP (experimental)
 
 `connect_remote_transport` is the client side of ACP's remote transports (the

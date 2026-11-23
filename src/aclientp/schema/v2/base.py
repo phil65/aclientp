@@ -49,6 +49,10 @@ class AnnotatedObject(Schema):
     """
 
 
+type JsonValue = dict[str, JsonValue] | list[JsonValue] | str | int | float | bool | None
+"""A JSON value: the params and results of custom (``_``-prefixed) methods."""
+
+
 def is_set[T](value: T | MISSING) -> TypeIs[T]:
     """Whether a field was given (``None`` counts as given): narrows ``T | MISSING`` to ``T``.
 
