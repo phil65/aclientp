@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from aclientp.connection import Connection
-from aclientp.exceptions import RequestError
+from aclientp.exceptions import ProtocolVersionError, RequestError
 from aclientp.schema.v2.base import to_wire
 from aclientp.schema.v2.protocol import AGENT_REQUESTS, CLIENT_NOTIFICATIONS, CLIENT_REQUESTS
 from aclientp.v2.agent import PROTOCOL_VERSION
@@ -209,11 +209,18 @@ class ClientSideConnection:
     # --- Calls to the agent ---------------------------------------------------------
 
     async def initialize(self, params: InitializeRequest) -> InitializeResponse:
-        """Send ``initialize``; the agent must answer with protocol version 2."""
-        response: InitializeResponse = await self._request("initialize", params)
-        if response.protocol_version != PROTOCOL_VERSION:
-            data = {"expected": PROTOCOL_VERSION, "received": response.protocol_version}
-            raise RequestError.invalid_request(data)
+        """Send ``initialize``; the agent must answer with protocol version 2.
+
+        Raises:
+            ProtocolVersionError: The agent answered with another protocol version,
+                e.g. ``1`` from an agent that only speaks v1. Checked before the rest
+                of the response is validated, since its shape depends on the version.
+        """
+        result = await self._conn.send_request("initialize", to_wire(params))
+        received = result.get("protocolVersion") if isinstance(result, dict) else None
+        if received != PROTOCOL_VERSION:
+            raise ProtocolVersionError(PROTOCOL_VERSION, received, result)
+        response: InitializeResponse = AGENT_REQUESTS["initialize"].result.validate_python(result)
         self.initialize_response = response
         return response
 

@@ -76,3 +76,21 @@ class RequestError(Exception):
 
     def to_error_obj(self) -> dict[str, Any]:
         return {"code": self.code, "message": str(self), "data": self.data}
+
+
+class ProtocolVersionError(RequestError):
+    """The peer answered ``initialize`` with a protocol version this side does not speak.
+
+    Raised by clients before the rest of the response is validated, so an agent that
+    only speaks another version (e.g. a v1 agent answering a v2 client) is reported
+    as such instead of as a malformed response.
+    """
+
+    def __init__(self, expected: int, received: Any, result: Any = None) -> None:
+        super().__init__(-32600, "Invalid request", {"expected": expected, "received": received})
+        self.expected = expected
+        """The protocol version this side speaks."""
+        self.received = received
+        """The ``protocolVersion`` of the response (any JSON value, as sent by the peer)."""
+        self.result = result
+        """The raw ``initialize`` result, e.g. to show the peer's name."""

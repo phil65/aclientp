@@ -141,7 +141,7 @@ from aclientp.transports import (
     StreamTransport,
     Transport,
 )
-from aclientp.exceptions import RequestError
+from aclientp.exceptions import ProtocolVersionError, RequestError
 from aclientp.agent import acp_requests, notifications
 
 __version__ = "0.0.1"
@@ -279,6 +279,7 @@ __all__ = [  # noqa: RUF022
     # core
     "AgentSideConnection",
     "ClientSideConnection",
+    "ProtocolVersionError",
     "RequestError",
     "Agent",
     "Client",

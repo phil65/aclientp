@@ -9,7 +9,7 @@ import anyio
 import pytest
 
 from aclientp.agent.implementations.testing import TestAgent as V1TestAgent
-from aclientp.exceptions import RequestError
+from aclientp.exceptions import ProtocolVersionError, RequestError
 from aclientp.router import RoutedAgentConnection
 from aclientp.schema.v2 import (
     AgentMessageChunk,
@@ -258,4 +258,23 @@ async def test_v2_only_router_rejects_v1() -> None:
     reply = await peer.receive()
 
     assert reply["error"]["code"] == -32022
+    await conn.close()
+
+
+async def test_client_reports_a_v1_agent_as_protocol_version_error() -> None:
+    writer, reader, peer = make_streams()
+    conn = ClientSideConnection(RecordingClient(), writer, reader)
+    init = asyncio.create_task(conn.initialize(InitializeRequest(protocol_version=2, info=INFO)))
+    request = await peer.receive()
+    # A v1 agent answers with its own version and a v1-shaped result (no `info`).
+    v1_result = {"protocolVersion": 1, "agentCapabilities": {}, "agentInfo": {"name": "old"}}
+    await peer.send({"jsonrpc": "2.0", "id": request["id"], "result": v1_result})
+
+    with pytest.raises(ProtocolVersionError) as exc_info:
+        await asyncio.wait_for(init, TIMEOUT)
+
+    assert exc_info.value.received == 1
+    assert exc_info.value.expected == 2
+    assert exc_info.value.result == v1_result
+    assert conn.initialize_response is None
     await conn.close()
