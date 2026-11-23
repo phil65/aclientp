@@ -9,7 +9,6 @@
 [![Implementation](https://img.shields.io/pypi/implementation/aclientp.svg)](https://pypi.org/project/aclientp/)
 [![Releases](https://img.shields.io/github/downloads/phil65/aclientp/total.svg)](https://github.com/phil65/aclientp/releases)
 [![Github Contributors](https://img.shields.io/github/contributors/phil65/aclientp)](https://github.com/phil65/aclientp/graphs/contributors)
-[![Github Discussions](https://img.shields.io/github/discussions/phil65/aclientp)](https://github.com/phil65/aclientp/discussions)
 [![Github Forks](https://img.shields.io/github/forks/phil65/aclientp)](https://github.com/phil65/aclientp/forks)
 [![Github Issues](https://img.shields.io/github/issues/phil65/aclientp)](https://github.com/phil65/aclientp/issues)
 [![Github Issues](https://img.shields.io/github/issues-pr/phil65/aclientp)](https://github.com/phil65/aclientp/pulls)

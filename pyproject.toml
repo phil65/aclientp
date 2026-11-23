@@ -37,7 +37,6 @@ dependencies = [
 
 [project.urls]
 "Code coverage" = "https://app.codecov.io/gh/phil65/aclientp"
-Discussions = "https://github.com/phil65/aclientp/discussions"
 Documentation = "https://phil65.github.io/aclientp/"
 Issues = "https://github.com/phil65/aclientp/issues"
 Source = "https://github.com/phil65/aclientp"
@@ -62,6 +61,7 @@ websocket = ["websockets"]  # WebSocket transport
 
 [dependency-groups]
 dev = [
+  "deptry",
   "devtools",
   "pyreadline3",
   "pytest",
@@ -78,9 +78,10 @@ docs = [
   # Only add below (Copier)
 ]
 lint = [
-  "mypy; python_version >= '3.14'",
-  "mypy[faster-cache]; python_version < '3.14'",
-  "ruff",
+  # Pinned on purpose: CI, pre-commit and editors all run exactly these versions.
+  # Bump them here (template) and roll out via `copier update`.
+  "ruff==0.17.6",
+  "ty==0.0.107",
   # Only add below (Copier)
 ]
 
@@ -108,35 +109,6 @@ allowed-commit-types = [
   "chore",
 ]
 docstring-style = "google"
-
-[tool.mypy]
-python_version = "3.13"
-pretty = true
-strict = true
-check_untyped_defs = true
-exclude = ["venv/", ".venv/"]
-plugins = ["pydantic.mypy"]
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-strict_equality = true
-
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-disallow_untyped_calls = false
-disallow_incomplete_defs = false
-disable_error_code = ["no-untyped-def", "no-untyped-call", "no-any-return", "unused-ignore"]
-
-[[tool.mypy.overrides]]
-module = ["fsspec.*"]
-ignore_missing_imports = true
 
 [tool.pyright]
 venvPath = "."
@@ -268,11 +240,11 @@ ignore = [
   "PLR0912",  # Too many branches
   "PLR0913",  # Too many arguments to function call
   "PLR0915",  # Too many statements
+  "PLR0917",  # Too many positional arguments
   # "PLR2004", # Magic values instead of named consts
   "SLF001",  # Private member accessed
   "TRY003",  # Avoid specifying long messages outside the exception class
   "TC006",  # runtime-cast-value
-  "PLR0917",  # Too many positional arguments
 ]
 
 [tool.ruff.lint.flake8-quotes]
@@ -318,6 +290,20 @@ preview = true
 [tool.ty.environment]
 python-version = "3.13"
 python-platform = "all"
+
+[tool.ty.src]
+# `ty check` (hooks, CI, editors) type-checks the package code only.
+include = ["src"]
+
+[tool.ty.analysis]
+# Optional dependencies that are not always installed, e.g. "numpy", "numpy.**".
+# Unresolved imports are errors otherwise, so broken imports are caught.
+allowed-unresolved-imports = []
+
+[tool.ty.rules]
+# Narrowing an overridden class attribute (e.g. pydantic discriminators,
+# `Config` attributes) is an intentional pattern.
+incompatible-mutable-override = "ignore"
 
 [tool.uv]
 default-groups = ["dev", "lint", "docs"]
