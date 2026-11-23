@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from aclientp import Agent
 from aclientp.schema import (
+    PROTOCOL_VERSION,
     AuthenticateResponse,
     CloseSessionResponse,
     ForkSessionResponse,
@@ -51,7 +52,8 @@ class TestAgent(Agent):
 
     async def initialize(self, params: InitializeRequest) -> InitializeResponse:
         return InitializeResponse(
-            protocol_version=params.protocol_version,
+            # Negotiate like a real v1 agent: never answer above the version it speaks.
+            protocol_version=min(params.protocol_version, PROTOCOL_VERSION),
             agent_capabilities=None,
             agent_info=Implementation(name="test-agent", version="1.0"),
         )
