@@ -174,5 +174,5 @@ a compare link.
 
 ## Status
 
-v1 follows `schema-v1.33.0`, v2 follows the draft `schema-v2.0.0-alpha.17`. The v2
+v1 follows `schema-v1.33.0`, v2 follows the draft `schema-v2.0.0-beta.3`. The v2
 API is **unstable** and follows the draft as it changes.

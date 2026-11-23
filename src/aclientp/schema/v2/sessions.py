@@ -55,8 +55,8 @@ class SystemPrompt(AnnotatedObject):
     mode: SystemPromptMode
     """How the Agent combines ``content`` with its own instructions."""
 
-    content: Sequence[ContentBlock]
-    """The system prompt content."""
+    content: Sequence[ContentBlock] = Field(min_length=1)
+    """The system prompt content; at least one block."""
 
 
 class NewSessionRequest(AnnotatedObject):

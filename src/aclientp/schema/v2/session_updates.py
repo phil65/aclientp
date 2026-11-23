@@ -125,8 +125,9 @@ class CompactionUpdate(AnnotatedObject):
     compaction_id: CompactionId
     """The agent-owned ID of the compaction, unique within the session."""
 
-    status: CompactionStatus
-    """Current lifecycle status."""
+    status: CompactionStatus | MISSING | None = MISSING
+    """Current lifecycle status; omitted leaves it unchanged, ``None`` resets it to
+    ``in_progress``. A new compaction starts as ``in_progress``."""
 
     summary: Sequence[ContentBlock] | MISSING | None = MISSING
     """Complete replacement summary content to show the user."""
