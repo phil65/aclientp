@@ -221,6 +221,22 @@ async def test_cancel_request_is_flushed_by_close(pair: tuple[Connection, Peer])
     assert cancel["params"] == {"requestId": request_id}
 
 
+async def test_requests_and_notifications_without_params_omit_the_key(
+    pair: tuple[Connection, Peer],
+) -> None:
+    # JSON-RPC allows leaving params out, not `"params": null` (upstream #2920).
+    conn, peer = pair
+    task = asyncio.create_task(conn.send_request("ping"))
+    request = await peer.receive()
+    assert "params" not in request
+    await peer.send({"jsonrpc": "2.0", "id": request["id"], "result": {}})
+    await asyncio.wait_for(task, TIMEOUT)
+    await conn.send_notification("_note")
+    assert "params" not in await peer.receive()
+    await conn.send_notification("_note", {"a": 1})
+    assert (await peer.receive())["params"] == {"a": 1}
+
+
 # --- request handling --------------------------------------------------------
 
 

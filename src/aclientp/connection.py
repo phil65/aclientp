@@ -195,7 +195,9 @@ class Connection:
         request_id = self._next_request_id
         self._next_request_id += 1
         future = self._state.register_outgoing(request_id, method)
-        payload = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+        payload: dict[str, Any] = {"jsonrpc": "2.0", "id": request_id, "method": method}
+        if params is not None:  # JSON-RPC allows omitting params, not ``null``
+            payload["params"] = params
         self._awaiting.add(request_id)
         try:
             await self._sender.send(payload)
@@ -244,7 +246,9 @@ class Connection:
             ConnectionError: The connection is closed.
         """
         self._raise_if_closed()
-        payload = {"jsonrpc": "2.0", "method": method, "params": params}
+        payload: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+        if params is not None:  # JSON-RPC allows omitting params, not ``null``
+            payload["params"] = params
         await self._sender.send(payload)
         self._notify_observers("outgoing", payload)
 
