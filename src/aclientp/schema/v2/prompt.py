@@ -42,7 +42,11 @@ class PromptRequest(AnnotatedObject):
     """The content of the user message; at least one block."""
 
     idempotency_key: IdempotencyKey | MISSING | None = MISSING
-    """Identifies this submission, so a retry does not insert the message twice."""
+    """Identifies this submission, so a retry does not insert the message twice.
+
+    Omitted and ``None`` mean no key. Agents that advertise ``capabilities.session`` MUST
+    support it: a retry with a recorded key returns the original ``message_id`` without
+    inserting another message (see :class:`aclientp.v2.idempotency.IdempotencyStore`)."""
 
 
 class PromptResponse(AnnotatedObject):

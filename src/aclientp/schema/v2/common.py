@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence  # noqa: TC003
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import MISSING, Field
+from pydantic import MISSING, Field, StringConstraints
 
 from aclientp.schema.v2.base import AnnotatedObject, Schema
 
@@ -63,8 +63,17 @@ McpServerAcpId = str
 McpRequestId = str
 """**UNSTABLE**: Identifier of an MCP request carried over ACP."""
 
-IdempotencyKey = str
-"""Client-chosen key that makes a ``session/prompt`` retry insert at most one message."""
+IDEMPOTENCY_KEY_MAX_LENGTH = 255
+"""Longest ``idempotencyKey``, in characters (code points, like JSON Schema ``maxLength``)."""
+
+IdempotencyKey = Annotated[
+    str, StringConstraints(min_length=1, max_length=IDEMPOTENCY_KEY_MAX_LENGTH)
+]
+"""Client-chosen key that makes a ``session/prompt`` retry insert at most one message.
+
+An opaque, case-sensitive string of 1 to 255 characters, scoped to the session. Any other
+value fails validation, so the request is answered with ``-32602`` (never treated as
+omitted). See :mod:`aclientp.v2.idempotency`."""
 
 MediaType = str
 """A MIME type, e.g. ``image/png``."""
