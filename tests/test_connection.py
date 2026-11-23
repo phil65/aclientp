@@ -394,3 +394,64 @@ def test_request_error_from_non_object() -> None:
     exc = RequestError.from_error_obj("oops")
     assert exc.code == -32603
     assert exc.data == {"details": "Malformed error response", "error": "oops"}
+
+
+async def test_responses_wait_for_the_notifications_received_before_them() -> None:
+    """The peer's order holds: what it sent before answering is handled first."""
+    handled: list[str] = []
+
+    async def handler(method: str, params: Any, is_notification: bool) -> Any:
+        await asyncio.sleep(0.1 if method == "early" else 0)
+        handled.append(method)
+
+    writer, reader, peer = make_streams()
+    conn = Connection(handler, writer, reader)
+    task, request_id = await _request(conn, peer)
+    await peer.send({"jsonrpc": "2.0", "method": "early"})
+    await peer.send({"jsonrpc": "2.0", "id": request_id, "result": {}})
+    await peer.send({"jsonrpc": "2.0", "method": "late"})
+
+    assert await asyncio.wait_for(task, TIMEOUT) == {}
+    assert "early" in handled  # Handled before the response was delivered
+    await conn.close()
+
+
+async def test_error_responses_wait_for_earlier_notifications_too() -> None:
+    handled: list[str] = []
+
+    async def handler(method: str, params: Any, is_notification: bool) -> Any:
+        await asyncio.sleep(0.1)
+        handled.append(method)
+
+    writer, reader, peer = make_streams()
+    conn = Connection(handler, writer, reader)
+    task, request_id = await _request(conn, peer)
+    await peer.send({"jsonrpc": "2.0", "method": "early"})
+    error = {"code": -32603, "message": "Internal error"}
+    await peer.send({"jsonrpc": "2.0", "id": request_id, "error": error})
+    with pytest.raises(RequestError):
+        await asyncio.wait_for(task, TIMEOUT)
+    assert handled == ["early"]
+    await conn.close()
+
+
+async def test_a_notification_handler_awaiting_a_request_does_not_deadlock() -> None:
+    """The handler's own notification is not waited for by the request it sends."""
+    conn_ref: list[Connection] = []
+    results: list[Any] = []
+
+    async def handler(method: str, params: Any, is_notification: bool) -> Any:
+        if method == "note":
+            results.append(await conn_ref[0].send_request("ping", {}))
+
+    writer, reader, peer = make_streams()
+    conn = Connection(handler, writer, reader)
+    conn_ref.append(conn)
+    await peer.send({"jsonrpc": "2.0", "method": "note"})
+    request = await asyncio.wait_for(peer.receive(), TIMEOUT)
+    await peer.send({"jsonrpc": "2.0", "id": request["id"], "result": {"ok": True}})
+    async with asyncio.timeout(TIMEOUT):
+        while not results:
+            await asyncio.sleep(0.01)
+    assert results == [{"ok": True}]
+    await conn.close()

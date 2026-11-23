@@ -14,6 +14,7 @@ from aclientp.exceptions import InvalidResponseError, ProtocolVersionError, Requ
 from aclientp.router import RoutedAgentConnection
 from aclientp.schema.v2 import (
     AgentMessageChunk,
+    CancelSessionNotification,
     IdleStateSessionUpdate,
     Implementation,
     InitializeRequest,
@@ -337,4 +338,75 @@ async def test_extension_methods_carry_json() -> None:
     assert result == {"method": "_x/hello", "echo": {"n": [1, 2.5, None]}}
     assert agents[0].notes == [["a"], None]
     await client_conn.close()
+    await agent_conn.close()
+
+
+class _EarlyUpdatesAgent(Agent):
+    """Sends a session's first update before answering ``session/new``; slow on cancel."""
+
+    def __init__(self, conn: AgentSideConnection) -> None:
+        self.conn = conn
+        self.cancelled: list[str] = []
+
+    async def initialize(self, params: InitializeRequest) -> InitializeResponse:
+        return InitializeResponse(protocol_version=2, info=INFO)
+
+    async def new_session(self, params: NewSessionRequest) -> NewSessionResponse:
+        chunk = AgentMessageChunk(message_id="a0", content=TextContent(text="welcome"))
+        await self.conn.session_update(UpdateSessionNotification(session_id="s1", update=chunk))
+        return NewSessionResponse(session_id="s1")
+
+    async def prompt(self, params: PromptRequest) -> PromptResponse:
+        await self.conn.request_permission(
+            RequestPermissionRequest(
+                session_id=params.session_id,
+                title="Go?",
+                options=[PermissionOption(option_id="ok", name="OK", kind="allow_once")],
+            )
+        )
+        # The client cancelled before answering: its cancel is handled by now
+        assert self.cancelled == [params.session_id]
+        return PromptResponse(message_id="u1")
+
+    async def cancel(self, params: CancelSessionNotification) -> None:
+        await asyncio.sleep(0.1)
+        self.cancelled.append(params.session_id)
+
+
+class _SlowClient(RecordingClient):
+    conn: ClientSideConnection
+
+    async def request_permission(
+        self, params: RequestPermissionRequest
+    ) -> RequestPermissionResponse:
+        await self.conn.cancel(CancelSessionNotification(session_id=params.session_id))
+        return await super().request_permission(params)
+
+    async def session_update(self, params: UpdateSessionNotification) -> None:
+        await asyncio.sleep(0.1)
+        await super().session_update(params)
+
+
+async def test_both_sides_handle_notifications_before_the_response_after_them() -> None:
+    to_agent_writer, to_agent_reader = _pipe()
+    to_client_writer, to_client_reader = _pipe()
+    agents: list[_EarlyUpdatesAgent] = []
+
+    def make_agent(conn: AgentSideConnection) -> _EarlyUpdatesAgent:
+        agents.append(_EarlyUpdatesAgent(conn))
+        return agents[0]
+
+    agent_conn = AgentSideConnection(make_agent, to_client_writer, to_agent_reader)
+    client = _SlowClient()
+    conn = ClientSideConnection(client, to_agent_writer, to_client_reader)
+    client.conn = conn
+    await conn.initialize(InitializeRequest(protocol_version=2, info=INFO))
+
+    session = await asyncio.wait_for(conn.new_session(NewSessionRequest(cwd="/work")), TIMEOUT)
+    assert [type(u.update) for u in client.updates] == [AgentMessageChunk]  # Client side
+
+    prompt = PromptRequest(session_id=session.session_id, prompt=[TextContent(text="hi")])
+    response = await asyncio.wait_for(conn.prompt(prompt), TIMEOUT)  # Agent side asserts
+    assert response.message_id == "u1"
+    await conn.close()
     await agent_conn.close()

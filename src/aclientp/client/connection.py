@@ -239,11 +239,8 @@ class ClientSideConnection(Agent):
         # Don't exclude_defaults here - the 'type' field in content blocks has a default
         # value but is required for discriminated unions to work
         dct = params.model_dump(mode="json", by_alias=True, exclude_none=True)
+        # The turn's updates, sent before the response, are handled when this returns
         resp = await self._conn.request_object("session/prompt", dct)
-        # The agent sends all updates of a turn before the prompt response, but they are
-        # handled concurrently: make sure the turn's updates are processed before the
-        # caller treats the turn as finished.
-        await self._conn.wait_for_notifications(partial(_is_session_update, params.session_id))
         return PromptResponse.model_validate(resp)
 
     async def cancel(self, params: CancelNotification) -> None:
@@ -270,14 +267,6 @@ class ClientSideConnection(Agent):
 
     async def __aexit__(self, *args: object) -> None:
         await self.close()
-
-
-def _is_session_update(session_id: str, method: str, params: Any) -> bool:
-    return (
-        method == "session/update"
-        and isinstance(params, dict)
-        and params.get("sessionId") == session_id
-    )
 
 
 @instrument(r"Handle Client Method {method}")

@@ -85,6 +85,15 @@ class Connection:
     - Malformed frames from the peer are logged and skipped, never fatal
     - Once the peer disconnects or the connection is closed, pending requests fail
       and new sends raise ``ConnectionError``
+
+    Ordering: notifications run concurrently (each in its own task, started in the
+    order received), but a request only returns (or raises the peer's error) once the
+    notifications received before its response have been handled. A caller sees the
+    effects of everything the peer sent before answering, e.g. a turn's or a replay's
+    updates before the response that ends it. Not waited for: the notification the
+    calling task itself handles (a handler sending a request), and notifications
+    received after the response. A notification handler that waits for something the
+    caller only does after its request returns would deadlock.
     """
 
     def __init__(
@@ -120,6 +129,10 @@ class Connection:
         self._inflight: dict[RequestId, asyncio.Task[dict[str, Any]]] = {}
         # Notifications received but not handled yet, with their (method, params)
         self._pending_notifications: dict[asyncio.Future[None], tuple[str, JsonValue | None]] = {}
+        # Requests sent and not answered yet; per answered one, the notifications that
+        # were pending when its response came
+        self._awaiting: set[int] = set()
+        self._handled_before: dict[int, set[asyncio.Future[None]]] = {}
         sender_type = sender_type or MessageSender
         self._sender = sender_type(self._writer, self._tasks)
         dispatcher_type = dispatcher_type or DefaultMessageDispatcher
@@ -170,7 +183,9 @@ class Connection:
     async def send_request(self, method: str, params: JsonValue | None = None) -> Any:
         """Send a request and wait for the peer's response.
 
-        Cancelling the caller sends ``$/cancel_request`` for a request still in flight.
+        Returns (or raises the peer's error) once the notifications received before the
+        response have been handled (see the class docs). Cancelling the caller sends
+        ``$/cancel_request`` for a request still in flight.
 
         Raises:
             RequestError: The peer answered with an error.
@@ -181,10 +196,16 @@ class Connection:
         self._next_request_id += 1
         future = self._state.register_outgoing(request_id, method)
         payload = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+        self._awaiting.add(request_id)
         try:
             await self._sender.send(payload)
             self._notify_observers("outgoing", payload)
-            return await future
+            try:
+                return await future
+            finally:  # Answered (result or error): first what the peer sent before
+                self._awaiting.discard(request_id)
+                if (before := self._handled_before.pop(request_id, None)) is not None:
+                    await self._wait_handled(before)
         except BaseException as exc:
             answered = future.done() and not future.cancelled()
             future.cancel()  # Nobody waits for it anymore
@@ -194,6 +215,9 @@ class Connection:
                 if isinstance(exc, asyncio.CancelledError):
                     self._send_cancel_request(request_id)
             raise
+        finally:
+            self._awaiting.discard(request_id)
+            self._handled_before.pop(request_id, None)
 
     async def request_object(self, method: str, params: JsonValue | None = None) -> dict[str, Any]:
         """Send a request whose result is a JSON object, as for all ACP methods.
@@ -231,21 +255,25 @@ class Connection:
     async def wait_for_notifications(self, select: NotificationFilter | None = None) -> None:
         """Wait until the notifications received so far have been handled.
 
-        Notifications are handled concurrently, so a response can be processed while
-        notifications the peer sent before it are still being handled. Awaiting this
-        right after a response restores the peer's ordering. Notifications received
-        later, and the one handled by the calling task, are not waited for.
+        Requests already wait for the notifications received before their response
+        (see the class docs); this waits for all received so far, e.g. before acting on
+        a notification. Notifications received later, and the one handled by the
+        calling task, are not waited for.
 
         Args:
             select: Only wait for notifications matching this ``(method, params)`` filter.
         """
-        current = _current_notification.get()
         pending = {
             done
             for done, (method, params) in self._pending_notifications.items()
-            if done is not current and (select is None or select(method, params))
+            if select is None or select(method, params)
         }
-        if pending:
+        await self._wait_handled(pending)
+
+    async def _wait_handled(self, notifications: set[asyncio.Future[None]]) -> None:
+        """Wait until ``notifications`` are handled (except the calling task's own)."""
+        current = _current_notification.get()
+        if pending := {done for done in notifications if done is not current and not done.done()}:
             await asyncio.wait(pending)
 
     def _send_cancel_request(self, request_id: RequestId) -> None:
@@ -457,6 +485,9 @@ class Connection:
         if not isinstance(request_id, int) or isinstance(request_id, bool):
             logger.warning("Ignoring response with unknown id", message=message)
             return
+        if request_id in self._awaiting:
+            # What the peer sent before this response is handled before it is delivered
+            self._handled_before[request_id] = set(self._pending_notifications)
         if "error" in message:
             error = RequestError.from_error_obj(message["error"])
             self._state.reject_outgoing(request_id, error)

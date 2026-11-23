@@ -175,6 +175,29 @@ variables:
 }
 ```
 
+## Message ordering
+
+Incoming requests and notifications are handled concurrently, each in its own task,
+started in the order they arrived. One guarantee holds on both sides (client and agent)
+and for every transport, since they all feed the same connection:
+
+**A request returns, or raises the peer's error, only once the notifications received
+before its response have been handled.** What the peer sent before answering (a turn's
+or a replay's updates, the first updates of a new session, a `session/cancel` before a
+permission answer) is visible when the call returns.
+
+- Not waited for: the notification the calling task itself is handling (a notification
+  handler that sends a request does not wait for itself), and notifications received
+  after the response.
+- "Received" is the order the connection reads messages in. stdio and WebSocket keep
+  the sender's order; over Streamable HTTP, messages on different SSE streams (e.g. a
+  `session/load` answered on the connection stream while its replay goes to the
+  session stream) arrive in the order the network delivers them.
+- A notification handler must not wait for something the caller of a later request
+  only does after that request returns: that would deadlock.
+
+`Connection.wait_for_notifications()` still waits for everything received so far.
+
 ## Staying in sync with upstream
 
 ```bash
