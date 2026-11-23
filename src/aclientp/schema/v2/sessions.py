@@ -9,9 +9,15 @@ from __future__ import annotations
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Literal
 
-from pydantic import MISSING, Discriminator, Field, Tag
+from pydantic import MISSING, Discriminator, Field, Tag, field_validator
 
-from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
+from aclientp.schema.v2.base import (
+    OTHER_TAG,
+    AnnotatedObject,
+    Unknown,
+    null_as_empty,
+    open_discriminator,
+)
 from aclientp.schema.v2.commands import AvailableCommand  # noqa: TC001
 from aclientp.schema.v2.common import (  # noqa: TC001
     AbsolutePath,
@@ -75,7 +81,12 @@ class NewSessionRequest(AnnotatedObject):
     """System-level instructions for the new session."""
 
     config_options: Sequence[InitialSessionConfigOption] | MISSING = MISSING
-    """Initial values for the session's config options."""
+    """Initial values for the session's config options.
+
+    Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
+    """
+
+    _config_options_null = field_validator("config_options", mode="before")(null_as_empty)
 
 
 class NewSessionResponse(AnnotatedObject):
@@ -136,7 +147,12 @@ class ResumeSessionRequest(AnnotatedObject):
     """System-level instructions for the resumed session."""
 
     config_options: Sequence[InitialSessionConfigOption] | MISSING = MISSING
-    """Initial values for the session's config options."""
+    """Initial values for the session's config options.
+
+    Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
+    """
+
+    _config_options_null = field_validator("config_options", mode="before")(null_as_empty)
 
 
 class ResumeSessionResponse(AnnotatedObject):
@@ -176,7 +192,12 @@ class ForkSessionRequest(AnnotatedObject):
     """System-level instructions for the forked session."""
 
     config_options: Sequence[InitialSessionConfigOption] | MISSING = MISSING
-    """Initial values for the forked session's config options."""
+    """Initial values for the forked session's config options.
+
+    Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
+    """
+
+    _config_options_null = field_validator("config_options", mode="before")(null_as_empty)
 
 
 class ForkSessionResponse(AnnotatedObject):
@@ -336,7 +357,14 @@ class SessionOptionsRequest(AnnotatedObject):
     """The working directory to resolve options for. Must be an absolute path."""
 
     additional_directories: Sequence[AbsolutePath] | MISSING = MISSING
-    """Additional workspace roots to resolve options for. Each path must be absolute."""
+    """Additional workspace roots to resolve options for. Each path must be absolute.
+
+    Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
+    """
+
+    _additional_directories_null = field_validator("additional_directories", mode="before")(
+        null_as_empty
+    )
 
     session_id: SessionId | MISSING | None = MISSING
     """The session to resolve options for."""

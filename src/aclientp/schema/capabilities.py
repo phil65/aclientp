@@ -112,11 +112,11 @@ class ClientSessionCapabilities(AnnotatedObject):
 
 
 class SubagentCapabilities(AnnotatedObject):
-    """**UNSTABLE**: Client support for ``subagent_update`` session updates."""
+    """Client support for ``subagent_update`` session updates."""
 
 
 class PlanCapabilities(AnnotatedObject):
-    """**UNSTABLE**: Client support for ID-addressed ``plan_update`` / ``plan_removed`` updates."""
+    """Client support for ID-addressed ``plan_update`` / ``plan_removed`` updates."""
 
 
 class ClientCapabilities(AnnotatedObject):
@@ -141,10 +141,10 @@ class ClientCapabilities(AnnotatedObject):
     """Session-related capabilities supported by the client."""
 
     subagents: SubagentCapabilities | None = None
-    """**UNSTABLE**: Client support for ``subagent_update`` session updates."""
+    """Client support for ``subagent_update`` session updates."""
 
     plan: PlanCapabilities | None = None
-    """**UNSTABLE**: Client support for ID-addressed plan updates."""
+    """Client support for ID-addressed plan updates."""
 
     fs: FileSystemCapabilities | None = Field(default_factory=FileSystemCapabilities)
     """File system capabilities supported by the client.
@@ -270,11 +270,11 @@ class SessionTitleCapabilities(AnnotatedObject):
 
 
 class SessionCancelCapabilities(AnnotatedObject):
-    """**UNSTABLE**: Permits the client to cancel a subagent's current work."""
+    """Permits the client to cancel a subagent's current work."""
 
 
 class SubagentSessionCapabilities(AnnotatedObject):
-    """**UNSTABLE**: Capabilities of a subagent session."""
+    """Capabilities of a subagent session."""
 
     cancel: SessionCancelCapabilities | None = None
     """Permits the client to cancel this child's current work without ending the session."""

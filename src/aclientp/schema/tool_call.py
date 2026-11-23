@@ -356,7 +356,7 @@ class PermissionOption(AnnotatedObject):
 
 
 class SessionReferenceToolCallContent(AnnotatedObject):
-    """**UNSTABLE**: Reference to another session, e.g. a subagent spawned by this tool call."""
+    """Reference to another session, e.g. a subagent spawned by this tool call."""
 
     type: Literal["session"] = Field(default="session", init=False)
     """Session reference tool call content."""

@@ -48,7 +48,7 @@ class BaseChunk(AnnotatedObject):
     """A single item of content"""
 
     message_id: str | None = None
-    """**UNSTABLE**: A unique identifier for the message this chunk belongs to.
+    """A unique identifier for the message this chunk belongs to.
 
     All chunks belonging to the same message share the same ``message_id``.
     A change in ``message_id`` indicates a new message has started.
@@ -563,7 +563,7 @@ class CompactionSummaryChunk(AnnotatedObject):
 
 
 class PlanUpdate(AnnotatedObject):
-    """**UNSTABLE**: Create or replace an ID-addressed plan.
+    """Create or replace an ID-addressed plan.
 
     Only sent if the client advertised the ``plan`` capability.
     """
@@ -571,16 +571,19 @@ class PlanUpdate(AnnotatedObject):
     session_update: Literal["plan_update"] = Field(default="plan_update", init=False)
 
     plan: PlanUpdateContent
-    """The updated plan content."""
+    """Replaces the whole plan with this ``plan_id``, even if its ``type`` changes."""
 
 
 class PlanRemoved(AnnotatedObject):
-    """**UNSTABLE**: Remove an ID-addressed plan."""
+    """Remove an ID-addressed plan.
+
+    Only sent if the client advertised the ``plan`` capability.
+    """
 
     session_update: Literal["plan_removed"] = Field(default="plan_removed", init=False)
 
     plan_id: PlanId
-    """The plan ID to remove."""
+    """The plan ID to remove. Clients MUST ignore a removal for an unknown ID."""
 
 
 class PromptSuggestion(AnnotatedObject):
@@ -605,13 +608,13 @@ class PromptSuggestionsUpdate(AnnotatedObject):
 
 
 class RunningStateUpdate(AnnotatedObject):
-    """**UNSTABLE**: Foreground work is in progress."""
+    """Foreground work is in progress."""
 
     state: Literal["running"] = Field(default="running", init=False)
 
 
 class IdleStateUpdate(AnnotatedObject):
-    """**UNSTABLE**: The child is ready to process another prompt."""
+    """The child is ready to process another prompt."""
 
     state: Literal["idle"] = Field(default="idle", init=False)
 
@@ -630,13 +633,13 @@ class IdleStateUpdate(AnnotatedObject):
 
 
 class RequiresActionStateUpdate(AnnotatedObject):
-    """**UNSTABLE**: Foreground work is blocked on user action."""
+    """Foreground work is blocked on user action."""
 
     state: Literal["requires_action"] = Field(default="requires_action", init=False)
 
 
 class UnknownStateUpdate(AnnotatedObject):
-    """**UNSTABLE**: The Agent cannot currently determine foreground activity.
+    """The Agent cannot currently determine foreground activity.
 
     Also used for custom or future states, whose raw value is kept in ``state``.
     """
@@ -656,11 +659,11 @@ StateUpdate = Annotated[
     | Annotated[UnknownStateUpdate, Tag("unknown")],
     Discriminator(_state_discriminator),
 ]
-"""**UNSTABLE**: State snapshot of a subagent session."""
+"""State snapshot of a subagent session."""
 
 
 class SubagentUpdate(AnnotatedObject):
-    """**UNSTABLE**: A subagent session started by the parent, or a change to it.
+    """A subagent session started by the parent, or a change to it.
 
     Only sent if the client advertised the ``subagents`` capability.
     """
@@ -690,8 +693,9 @@ class SubagentUpdate(AnnotatedObject):
 
 
 class SessionMessage(AnnotatedObject):
-    """**UNSTABLE**: A message exchanged between sessions (e.g. parent and subagent).
+    """A message exchanged between sessions (e.g. parent and subagent).
 
+    Only sent if the client advertised the ``subagents`` capability.
     Upserts by ``message_id``: omitted fields are left unchanged, ``None`` clears them.
     """
 
@@ -717,7 +721,10 @@ class SessionMessage(AnnotatedObject):
 
 
 class SessionMessageChunk(AnnotatedObject):
-    """**UNSTABLE**: A content block appended to a ``session_message``."""
+    """A content block appended to a ``session_message``.
+
+    Only sent if the client advertised the ``subagents`` capability.
+    """
 
     session_update: Literal["session_message_chunk"] = Field(
         default="session_message_chunk", init=False

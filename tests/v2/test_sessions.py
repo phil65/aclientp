@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import MISSING, TypeAdapter
+from pydantic import MISSING, TypeAdapter, ValidationError
+import pytest
 
 from aclientp.schema.v2.base import to_wire
 from aclientp.schema.v2.commands import Command, Skill, TextCommandInput, UnknownCommand
@@ -15,7 +16,7 @@ from aclientp.schema.v2.config_options import (
     SetConfigOptionBooleanRequest,
     SetSessionConfigOptionRequest,
 )
-from aclientp.schema.v2.mcp import McpServerStdio, UnknownMcpServer
+from aclientp.schema.v2.mcp import McpServerStdio, MessageMcpRequest, UnknownMcpServer
 from aclientp.schema.v2.prompt import (
     IdleStateUpdate,
     OtherStateUpdate,
@@ -23,10 +24,12 @@ from aclientp.schema.v2.prompt import (
     UnknownStateUpdate,
 )
 from aclientp.schema.v2.sessions import (
+    ForkSessionRequest,
     NewSessionRequest,
     NewSessionResponse,
     ReplayFromStart,
     ResumeSessionRequest,
+    SessionOptionsRequest,
 )
 
 
@@ -123,3 +126,29 @@ def test_idle_state_keeps_null_stop_reason() -> None:
 def test_unknown_and_custom_states_are_distinct() -> None:
     assert isinstance(STATES.validate_python({"state": "unknown"}), UnknownStateUpdate)
     assert isinstance(STATES.validate_python({"state": "_paused"}), OtherStateUpdate)
+
+
+# --- upstream schema-v2.0.0-beta.4 and #2976 -----------------------------------------
+
+
+def test_mcp_message_tool_call_requires_session() -> None:
+    wire = {"serverId": "s", "requestId": "r", "method": "tools/call"}
+    request = MessageMcpRequest.model_validate({**wire, "sessionId": "a", "toolCallId": "t"})
+    assert to_wire(request) == {**wire, "sessionId": "a", "toolCallId": "t"}
+    assert MessageMcpRequest.model_validate({**wire, "toolCallId": None}).session_id is MISSING
+    for session in ({}, {"sessionId": None}):
+        with pytest.raises(ValidationError, match="toolCallId requires sessionId"):
+            MessageMcpRequest.model_validate({**wire, **session, "toolCallId": "t"})
+
+
+def test_null_setup_lists_read_as_empty() -> None:
+    for model, extra in (
+        (NewSessionRequest, {}),
+        (ResumeSessionRequest, {"sessionId": "s"}),
+        (ForkSessionRequest, {"sessionId": "s"}),
+    ):
+        request = model.model_validate({"cwd": "/w", "configOptions": None, **extra})
+        assert list(request.config_options) == []
+        assert model.model_validate({"cwd": "/w", **extra}).config_options is MISSING
+    options = SessionOptionsRequest.model_validate({"cwd": "/w", "additionalDirectories": None})
+    assert list(options.additional_directories) == []

@@ -4,6 +4,14 @@ Written against the pinned upstream schema in ``schema/v2/`` and checked by
 ``python -m aclientp.schema_reference --protocol 2 check``. See :mod:`aclientp.schema.v2.base`
 for the wire rules: optional fields default to ``MISSING`` and are left out, ``None``
 is sent as ``null``; serialize with :func:`to_wire` and test fields with :func:`is_set`.
+
+Text shown to users is plain text (titles, names, labels, hints, error messages),
+except these fields, which may contain Markdown (render as CommonMark, optionally GFM):
+
+- ``TextContent.text`` (text content blocks), ``PlanEntry.content``, ``PlanMarkdown.content``
+- the ``description`` of ``AuthMethodAgent`` / ``AuthMethodTerminal``, ``Command`` / ``Skill`` /
+  ``UnknownCommand``, ``SessionConfigOption`` (all kinds) and ``SessionConfigSelectOption``,
+  ``RequestPermissionRequest`` and ``SubagentUpdate``
 """
 
 from pydantic import MISSING

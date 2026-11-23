@@ -42,7 +42,7 @@ class Command(AnnotatedObject):
     """Command name without the leading ``/``, e.g. ``create_plan``; no whitespace."""
 
     description: str
-    """What the command does."""
+    """What the command does. May contain Markdown."""
 
     input: AvailableCommandInput | MISSING | None = MISSING
     """The command's input; omitted means it takes none."""
@@ -60,7 +60,7 @@ class Skill(AnnotatedObject):
     """Skill name, used in ``skill`` content blocks; no whitespace."""
 
     description: str
-    """What the skill does, shown to users."""
+    """What the skill does, shown to users. May contain Markdown."""
 
     path: AbsolutePath | MISSING | None = MISSING
     """Absolute path of the file defining the skill (normally its ``SKILL.md``) on the
@@ -77,7 +77,7 @@ class UnknownCommand(Unknown):
     """Command name."""
 
     description: str
-    """What the command does."""
+    """What the command does. May contain Markdown."""
 
 
 AvailableCommand = Annotated[

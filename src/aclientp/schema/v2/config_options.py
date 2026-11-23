@@ -40,7 +40,7 @@ class SessionConfigSelectOption(AnnotatedObject):
     """Human-readable label."""
 
     description: str | MISSING | None = MISSING
-    """Description of this value."""
+    """Description of this value. May contain Markdown."""
 
 
 class SessionConfigSelectGroup(AnnotatedObject):
@@ -70,7 +70,7 @@ class _ConfigOptionBase(AnnotatedObject):
     """Human-readable label."""
 
     description: str | MISSING | None = MISSING
-    """Description for the Client to show."""
+    """Description for the Client to show. May contain Markdown."""
 
     category: SessionConfigOptionCategory | MISSING | None = MISSING
     """Semantic category, for UX only."""

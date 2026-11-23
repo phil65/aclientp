@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Sequence  # noqa: TC003
 from typing import Any, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 
-from aclientp.schema.base import AnnotatedObject, Request
+from aclientp.schema.base import AnnotatedObject, Request, null_as_empty
 from aclientp.schema.capabilities import (
     AuthCapabilities,
     ClientCapabilities,
@@ -73,7 +73,12 @@ class SessionSetupRequest(Request):
     """
 
     config_options: Sequence[InitialSessionConfigOption] = Field(default_factory=list)
-    """**UNSTABLE**: Config option values to apply when the session is set up."""
+    """**UNSTABLE**: Config option values to apply when the session is set up.
+
+    Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
+    """
+
+    _config_options_null = field_validator("config_options", mode="before")(null_as_empty)
 
 
 class CustomRequest(Request):
@@ -204,7 +209,14 @@ class SessionOptionsRequest(Request):
     """The working directory to resolve options for. Must be an absolute path."""
 
     additional_directories: Sequence[str] = Field(default_factory=list)
-    """Additional workspace roots to resolve options for. Each path must be absolute."""
+    """Additional workspace roots to resolve options for. Each path must be absolute.
+
+    Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
+    """
+
+    _additional_directories_null = field_validator("additional_directories", mode="before")(
+        null_as_empty
+    )
 
     session_id: str | None = None
     """The session to resolve options for."""
@@ -283,6 +295,13 @@ class SetSessionConfigOptionRequest(Request):
 
     value: str | bool
     """The value to set. String for select options, bool for boolean options."""
+
+    @model_validator(mode="after")
+    def _boolean_needs_bool(self) -> Self:
+        if self.type == "boolean" and not isinstance(self.value, bool):
+            msg = 'type "boolean" requires a boolean value'
+            raise ValueError(msg)
+        return self
 
 
 class InitializeRequest(Request):

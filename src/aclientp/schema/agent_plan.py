@@ -34,11 +34,11 @@ class PlanEntry(AnnotatedObject):
 
 
 PlanId = str
-"""**UNSTABLE**: Agent-owned identifier of a plan, unique within the session."""
+"""Agent-owned identifier of a plan, unique within the session."""
 
 
 class PlanItems(AnnotatedObject):
-    """**UNSTABLE**: A plan made of structured entries."""
+    """A plan made of structured entries."""
 
     type: Literal["items"] = Field(default="items", init=False)
 
@@ -50,7 +50,7 @@ class PlanItems(AnnotatedObject):
 
 
 class PlanMarkdown(AnnotatedObject):
-    """**UNSTABLE**: A plan made of raw markdown content."""
+    """A plan made of Markdown content."""
 
     type: Literal["markdown"] = Field(default="markdown", init=False)
 
@@ -58,11 +58,12 @@ class PlanMarkdown(AnnotatedObject):
     """The plan ID to update."""
 
     content: str
-    """Markdown content for the plan."""
+    """The complete plan as Markdown, not just the text that changed."""
 
     path: str | None = None
-    """The absolute path of the file that holds this plan."""
+    """The absolute path of the file that holds this plan. Omitted and ``None`` mean the
+    plan has no file; ``content`` is displayed either way."""
 
 
 PlanUpdateContent = Annotated[PlanItems | PlanMarkdown, Field(discriminator="type")]
-"""**UNSTABLE**: Content of an ID-addressed plan update."""
+"""Content of an ID-addressed plan update."""

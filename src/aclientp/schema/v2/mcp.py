@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Any, Literal
 
-from pydantic import MISSING, Discriminator, Field, Tag
+from pydantic import MISSING, Discriminator, Field, Tag, model_validator
 
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Schema, Unknown, open_discriminator
 from aclientp.schema.v2.common import (  # noqa: TC001
@@ -14,6 +14,8 @@ from aclientp.schema.v2.common import (  # noqa: TC001
     HttpHeader,
     McpRequestId,
     McpServerAcpId,
+    SessionId,
+    ToolCallId,
 )
 
 
@@ -105,6 +107,24 @@ class MessageMcpRequest(AnnotatedObject):
 
     params: dict[str, Any] | MISSING | None = MISSING
     """The inner MCP params; ``None`` is the same as omitted."""
+
+    session_id: SessionId | MISSING | None = MISSING
+    """The session whose work caused this request (the child's ID for a child session's
+    work). Omitted and ``None`` mean no session. The Agent SHOULD include it when it knows
+    the session and MUST NOT guess. A provider that needs it MAY reject a request without
+    it with ``-32602``."""
+
+    tool_call_id: ToolCallId | MISSING | None = MISSING
+    """The tool call in that session this request is part of. Omitted and ``None`` mean no
+    tool call. Requires ``session_id``; providers MUST NOT reject a request for a missing
+    or unknown tool call."""
+
+    @model_validator(mode="after")
+    def _tool_call_needs_session(self) -> MessageMcpRequest:
+        if self.tool_call_id not in (MISSING, None) and self.session_id in (MISSING, None):
+            msg = "toolCallId requires sessionId"
+            raise ValueError(msg)
+        return self
 
 
 class MessageMcpNotification(AnnotatedObject):

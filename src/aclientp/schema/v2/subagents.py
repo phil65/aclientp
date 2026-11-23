@@ -46,7 +46,7 @@ class SubagentUpdate(AnnotatedObject):
     """The parent's display title for the child; need not be unique."""
 
     description: str | MISSING | None = MISSING
-    """The parent's description of the child's role or purpose."""
+    """The parent's description of the child's role or purpose. May contain Markdown."""
 
     capabilities: SubagentSessionCapabilities | MISSING | None = MISSING
     """Client-initiated mutations permitted for the child."""

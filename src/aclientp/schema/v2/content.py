@@ -71,7 +71,7 @@ class ResourceLink(AnnotatedObject):
     """Display title."""
 
     description: str | MISSING | None = MISSING
-    """Human-readable details."""
+    """Plain-text description of the linked resource."""
 
     icons: Sequence[Icon] | MISSING | None = MISSING
     """Icons a user interface can show."""

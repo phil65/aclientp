@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import Discriminator, Field
+from pydantic import Discriminator, Field, model_validator
 
 from aclientp.schema.base import AnnotatedObject
 
@@ -182,3 +182,10 @@ class InitialSessionConfigOption(AnnotatedObject):
 
     value: SessionConfigValueId | bool
     """The value to set."""
+
+    @model_validator(mode="after")
+    def _boolean_needs_bool(self) -> Self:
+        if self.type == "boolean" and not isinstance(self.value, bool):
+            msg = 'type "boolean" requires a boolean value'
+            raise ValueError(msg)
+        return self

@@ -22,7 +22,7 @@ class PlanEntry(AnnotatedObject):
     """A task or goal the agent intends to accomplish."""
 
     content: str
-    """What the task aims to accomplish."""
+    """What the task aims to accomplish. May contain Markdown."""
 
     priority: PlanEntryPriority
     """Relative importance of the task."""
@@ -52,7 +52,7 @@ class PlanMarkdown(AnnotatedObject):
     """The plan to update."""
 
     content: str
-    """Markdown content of the plan."""
+    """The complete plan as Markdown, not just the text that changed."""
 
     path: AbsolutePath | MISSING | None = MISSING
     """Absolute path of the file holding the plan."""

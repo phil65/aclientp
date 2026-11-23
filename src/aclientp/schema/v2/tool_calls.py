@@ -228,11 +228,13 @@ class ToolCallCancelCapabilities(AnnotatedObject):
 class ToolCallCapabilities(AnnotatedObject):
     """Client-initiated controls a tool call currently supports.
 
-    A malformed value counts as no controls.
+    On a ``tool_call_update``, an omitted ``capabilities`` leaves the previous value
+    unchanged, ``null`` clears it and an object replaces it as a whole.
     """
 
     cancel: ToolCallCancelCapabilities | MISSING | None = MISSING
-    """Permits ``tool_call/cancel`` for this tool call."""
+    """Permits ``tool_call/cancel`` for this tool call. Omitted and ``None`` mean
+    unsupported, an object (also ``{}``) means supported."""
 
 
 class ToolCallUpdate(AnnotatedObject):

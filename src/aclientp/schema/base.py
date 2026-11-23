@@ -24,6 +24,15 @@ class Schema(BaseModel):
     )
 
 
+def null_as_empty(value: Any) -> Any:
+    """``mode="before"`` validator: read ``null`` as an empty list.
+
+    For list fields where upstream defines omitted, ``null`` and ``[]`` as equivalent
+    (e.g. the initial ``configOptions`` of session setup), keeping the field's type.
+    """
+    return [] if value is None else value
+
+
 class AnnotatedObject(Schema):
     """Base class for generated models."""
 

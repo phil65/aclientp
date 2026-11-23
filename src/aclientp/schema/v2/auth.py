@@ -27,7 +27,8 @@ class AuthMethodAgent(AnnotatedObject):
     """Human-readable name of the authentication method."""
 
     description: str | MISSING | None = MISSING
-    """Optional human-readable description of this authentication method."""
+    """Optional human-readable description of this authentication method. May contain
+    Markdown, e.g. a code span for a command to run."""
 
 
 class AuthMethodTerminal(AnnotatedObject):
@@ -47,7 +48,8 @@ class AuthMethodTerminal(AnnotatedObject):
     """Human-readable name of the authentication method."""
 
     description: str | MISSING | None = MISSING
-    """Optional human-readable description of this authentication method."""
+    """Optional human-readable description of this authentication method. May contain
+    Markdown, e.g. a code span for a command to run."""
 
     args: Sequence[str] | MISSING = MISSING
     """Additional arguments to append to the configured agent invocation for terminal auth."""
@@ -120,8 +122,8 @@ class AuthAccount(AnnotatedObject):
     ``Claude Max``, ``OpenAI API key``, or ``Vertex AI``."""
 
     description: str | MISSING | None = MISSING
-    """Short text shown with the label, such as the credential source, for example ``API key
-    helper``. MUST NOT contain credentials."""
+    """Short plain-text description shown with the label, such as the credential source,
+    for example ``API key helper``. MUST NOT contain credentials."""
 
     active: bool | MISSING | None = MISSING
     """Whether the agent currently uses this account by default."""

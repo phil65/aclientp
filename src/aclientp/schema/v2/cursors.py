@@ -119,10 +119,7 @@ class CursorForkCapabilities(AnnotatedObject):
 
 
 class CursorCapabilities(AnnotatedObject):
-    """**UNSTABLE**: The methods that currently accept a cursor.
-
-    A malformed value counts as no capabilities.
-    """
+    """**UNSTABLE**: The methods that currently accept a cursor."""
 
     fork: CursorForkCapabilities | MISSING | None = MISSING
     """``session/fork`` accepts this cursor."""

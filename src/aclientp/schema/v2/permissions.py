@@ -92,7 +92,7 @@ class RequestPermissionRequest(AnnotatedObject):
     """Title of the permission prompt (not the title of a tool call)."""
 
     description: str | MISSING | None = MISSING
-    """Why permission is needed."""
+    """Why permission is needed. May contain Markdown."""
 
     subject: RequestPermissionSubject | MISSING | None = MISSING
     """Structured context about the operation."""
