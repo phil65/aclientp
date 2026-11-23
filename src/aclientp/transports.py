@@ -467,26 +467,47 @@ async def _drain_stderr_to_log(
     process: Process,
     command: str,
     log_level: int = logging.WARNING,
+    *,
+    log: bool = True,
+    on_stderr: Callable[[str], object] | None = None,
 ) -> None:
-    """Read stderr from a process and log each line.
+    """Read stderr from a process line by line; log each line and/or pass it on.
 
     Args:
         process: The subprocess to read stderr from.
         command: Command name for log messages.
         log_level: Log level for stderr output (default WARNING).
+        log: Whether to log the lines.
+        on_stderr: Called with each line (without line ending).
     """
     if process.stderr is None:
         return
 
+    buffer = b""
+
+    def emit(raw: bytes) -> None:
+        line = raw.decode(errors="replace").rstrip("\r\n")
+        if log and line.strip():
+            logger.log(log_level, "[%s stderr] %s", command, line)
+        if on_stderr is not None:
+            try:
+                on_stderr(line)
+            except Exception:
+                logger.exception("stderr callback failed for %s", command)
+
     try:
-        async for line_bytes in process.stderr:
-            line = line_bytes.decode(errors="replace").rstrip()
-            if line:
-                logger.log(log_level, "[%s stderr] %s", command, line)
+        # Chunks are not lines: split them, and keep a partial last line for later.
+        async for chunk in process.stderr:
+            buffer += chunk
+            *lines, buffer = buffer.split(b"\n")
+            for raw in lines:
+                emit(raw)
     except anyio.EndOfStream:
         pass
     except Exception:
         logger.debug("Error reading stderr from %s", command, exc_info=True)
+    if buffer:
+        emit(buffer)
 
 
 @asynccontextmanager
@@ -499,6 +520,7 @@ async def spawn_stdio_transport(
     shutdown_timeout: float = 2.0,
     log_stderr: bool = False,
     stderr_log_level: int = logging.WARNING,
+    on_stderr: Callable[[str], object] | None = None,
 ) -> AsyncGenerator[tuple[ByteReceiveStream, ByteSendStream, Process]]:
     """Launch a subprocess and expose its stdio streams as anyio streams.
 
@@ -514,6 +536,10 @@ async def spawn_stdio_transport(
         shutdown_timeout: Timeout for graceful shutdown.
         log_stderr: If True, read stderr in background and log each line.
         stderr_log_level: Log level for stderr output (default WARNING).
+        on_stderr: Called with each stderr line (read in background), e.g. to show
+            it in a UI. With ``stderr=PIPE``, pass this or ``log_stderr`` (or read
+            ``process.stderr`` yourself): a pipe nobody reads fills up and blocks
+            the agent.
     """
     merged_env = default_environment()
     if env:
@@ -534,32 +560,43 @@ async def spawn_stdio_transport(
         raise RuntimeError("spawn_stdio_transport requires stdout/stdin pipes")
 
     stderr_task: asyncio.Task[None] | None = None
-    if log_stderr and process.stderr is not None:
-        stderr_task = asyncio.create_task(_drain_stderr_to_log(process, command, stderr_log_level))
+    if (log_stderr or on_stderr is not None) and process.stderr is not None:
+        stderr_task = asyncio.create_task(
+            _drain_stderr_to_log(
+                process, command, stderr_log_level, log=log_stderr, on_stderr=on_stderr
+            )
+        )
 
     try:
         yield process.stdout, process.stdin, process
     finally:
-        # Cancel stderr logging task
+        await _shutdown_process(process, shutdown_timeout)
+        # The process is gone: read what is left of stderr (e.g. a crash message)
+        # before stopping the reader.
         if stderr_task is not None:
+            with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+                await asyncio.wait_for(asyncio.shield(stderr_task), shutdown_timeout)
             stderr_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await stderr_task
 
-        # Attempt graceful stdin shutdown first. Bounded: closing waits for buffered
-        # data to drain, which never happens if the child stopped reading.
-        if process.stdin is not None:
-            with contextlib.suppress(Exception), anyio.move_on_after(shutdown_timeout):
-                await process.stdin.aclose()
 
+async def _shutdown_process(process: Process, shutdown_timeout: float) -> None:
+    """Close stdin, wait for the process to exit, then terminate / kill it."""
+    # Attempt graceful stdin shutdown first. Bounded: closing waits for buffered
+    # data to drain, which never happens if the child stopped reading.
+    if process.stdin is not None:
+        with contextlib.suppress(Exception), anyio.move_on_after(shutdown_timeout):
+            await process.stdin.aclose()
+
+    try:
+        with anyio.fail_after(shutdown_timeout):
+            await process.wait()
+    except TimeoutError:
+        process.terminate()
         try:
             with anyio.fail_after(shutdown_timeout):
                 await process.wait()
         except TimeoutError:
-            process.terminate()
-            try:
-                with anyio.fail_after(shutdown_timeout):
-                    await process.wait()
-            except TimeoutError:
-                process.kill()
-                await process.wait()
+            process.kill()
+            await process.wait()
