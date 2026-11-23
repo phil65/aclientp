@@ -27,7 +27,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "anyenv[httpx2]>=2.0.21",
+  "anyenv[httpx2]>=2.1.0",
   "anyio>=4.0",
   "httpx2>=2.16",
   "pydantic>=2.14",
@@ -72,8 +72,9 @@ dev = [
 ]
 benchmark = ["pyinstrument"]
 docs = [
-  "mkdocs-material",
-  "mkdocs-mknodes",
+  "mkdocs-mknodes>=2.1.0",
+  "mkdocstrings[python]",
+  "mknodes>=3.2.0",
   # Only add below (Copier)
 ]
 lint = [
