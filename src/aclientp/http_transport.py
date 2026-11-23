@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 import anyenv
 import anyio
 from anyio.abc import ByteReceiveStream, ByteSendStream
-import httpx
+import httpx2
 
 
 if TYPE_CHECKING:
@@ -123,7 +123,7 @@ class _HttpConnection:
     def __init__(
         self,
         url: str,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         task_group: TaskGroup,
         inbox: MemoryObjectSendStream[bytes],
     ) -> None:
@@ -165,7 +165,7 @@ class _HttpConnection:
 
     # --- SSE streams ----------------------------------------------------------------------
 
-    async def _read_sse(self, response: httpx.Response) -> None:
+    async def _read_sse(self, response: httpx2.Response) -> None:
         """Deliver every ``data:`` event of an SSE response (comments are keep-alives)."""
         data: list[str] = []
         async for line in response.aiter_lines():
@@ -194,14 +194,14 @@ class _HttpConnection:
         started = False
         try:
             async with self.client.stream("GET", self.url, headers=self._sse_headers()) as resp:
-                if resp.status_code != httpx.codes.OK:
+                if resp.status_code != httpx2.codes.OK:
                     body = (await resp.aread()).decode(errors="replace")
                     msg = f"ACP connection stream failed ({resp.status_code}): {body[:200]}"
                     raise HttpTransportError(msg)
                 started = True
                 task_status.started()
                 await self._read_sse(resp)
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             if not started:
                 raise HttpTransportError(f"ACP connection stream failed: {exc}") from exc
             logger.warning("ACP connection stream failed: %s", exc)
@@ -227,7 +227,7 @@ class _HttpConnection:
             try:
                 headers = self._sse_headers(session_id)
                 async with self.client.stream("GET", self.url, headers=headers) as resp:
-                    if resp.status_code != httpx.codes.OK:
+                    if resp.status_code != httpx2.codes.OK:
                         body = (await resp.aread()).decode(errors="replace")
                         session.error = (
                             f"Session stream rejected ({resp.status_code}): {body[:200]}"
@@ -239,7 +239,7 @@ class _HttpConnection:
                     session.open = True
                     session.ready.set()
                     await self._read_sse(resp)
-            except httpx.HTTPError as exc:
+            except httpx2.HTTPError as exc:
                 session.error = f"Session stream failed: {exc}"
             finally:
                 session.ready.set()
@@ -311,7 +311,7 @@ class _HttpConnection:
             response = await self.client.post(
                 self.url, content=anyenv.dump_json(message), headers=headers
             )
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             logger.warning("ACP POST failed: %s", exc)
             await self.close_inbox()
             return
@@ -344,7 +344,7 @@ class _HttpConnection:
             response = await self.client.post(
                 self.url, content=anyenv.dump_json(message), headers=headers
             )
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             await self._fail_connection(message, f"ACP server unreachable: {exc}")
             return
         if not response.is_success:
@@ -394,7 +394,7 @@ class _HttpConnection:
         with anyio.move_on_after(5):
             try:
                 await self.client.delete(self.url, headers=headers)
-            except httpx.HTTPError as exc:
+            except httpx2.HTTPError as exc:
                 logger.debug("ACP DELETE failed: %s", exc)
 
 
@@ -459,7 +459,7 @@ async def connect_http_transport(
     url: str,
     *,
     headers: Mapping[str, str] | None = None,
-    client: httpx.AsyncClient | None = None,
+    client: httpx2.AsyncClient | None = None,
     timeout: float = 30.0,
 ) -> AsyncGenerator[tuple[ByteReceiveStream, ByteSendStream]]:
     """Connect to an ACP server's Streamable HTTP endpoint.
@@ -479,10 +479,10 @@ async def connect_http_transport(
     """
     owned = client is None
     if client is None:
-        client = httpx.AsyncClient(
+        client = httpx2.AsyncClient(
             http2=_http2_available(),
             headers=dict(headers or {}),
-            timeout=httpx.Timeout(timeout, read=None),
+            timeout=httpx2.Timeout(timeout, read=None),
         )
     elif headers:
         client.headers.update(headers)

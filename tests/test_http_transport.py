@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import anyenv
-import httpx
+import httpx2
 import pytest
 
 from aclientp.client.connection import ClientSideConnection
@@ -45,7 +45,7 @@ class FakeServer:
     def _session_queue(self, session_id: str) -> asyncio.Queue[dict[str, Any] | None]:
         return self.session_queues.setdefault(session_id, asyncio.Queue())
 
-    async def handle(self, request: httpx.Request) -> httpx.Response:
+    async def handle(self, request: httpx2.Request) -> httpx2.Response:
         match request.method:
             case "POST":
                 return await self._post(request)
@@ -53,27 +53,27 @@ class FakeServer:
                 return self._get(request)
             case "DELETE":
                 self.deleted = True
-                return httpx.Response(202)
+                return httpx2.Response(202)
             case _:
-                return httpx.Response(405)
+                return httpx2.Response(405)
 
-    async def _post(self, request: httpx.Request) -> httpx.Response:
+    async def _post(self, request: httpx2.Request) -> httpx2.Response:
         message = anyenv.load_json(request.content, return_type=dict)
         headers = {k.lower(): v for k, v in request.headers.items()}
         self.posts.append((headers, message))
         if message.get("method") == "initialize":
             result = {"protocolVersion": 1, "agentCapabilities": {"loadSession": True}}
             body = {"jsonrpc": "2.0", "id": message["id"], "result": result}
-            return httpx.Response(200, json=body, headers={"Acp-Connection-Id": CONNECTION})
+            return httpx2.Response(200, json=body, headers={"Acp-Connection-Id": CONNECTION})
         if headers.get("acp-connection-id") != CONNECTION:
-            return httpx.Response(404, text="Unknown Acp-Connection-Id")
+            return httpx2.Response(404, text="Unknown Acp-Connection-Id")
         match message.get("method"):
             case "session/new":
                 response = {"jsonrpc": "2.0", "id": message["id"], "result": {"sessionId": SESSION}}
                 await self.conn_queue.put(response)
             case "session/prompt":
                 if self.prompt_status != 202:
-                    return httpx.Response(self.prompt_status, text="busy")
+                    return httpx2.Response(self.prompt_status, text="busy")
                 self.pending_prompt = message["id"]
                 queue = self._session_queue(headers["acp-session-id"])
                 chunk = {"content": {"type": "text", "text": "hi"}}
@@ -99,13 +99,13 @@ class FakeServer:
                 await queue.put({"jsonrpc": "2.0", "id": self.pending_prompt, "result": result})
             case _:
                 pass
-        return httpx.Response(202)
+        return httpx2.Response(202)
 
-    def _get(self, request: httpx.Request) -> httpx.Response:
+    def _get(self, request: httpx2.Request) -> httpx2.Response:
         if "text/event-stream" not in request.headers.get("accept", ""):
-            return httpx.Response(406)
+            return httpx2.Response(406)
         if request.headers.get("acp-connection-id") != CONNECTION:
-            return httpx.Response(404)
+            return httpx2.Response(404)
         session_id = request.headers.get("acp-session-id")
         self.streams.append(session_id)
         queue = self.conn_queue if session_id is None else self._session_queue(session_id)
@@ -115,7 +115,7 @@ class FakeServer:
             while (message := await queue.get()) is not None:
                 yield f"data: {anyenv.dump_json(message)}\n\n".encode()
 
-        return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, content=events())
+        return httpx2.Response(200, headers={"Content-Type": "text/event-stream"}, content=events())
 
 
 class RecordingClient(NoOpClient):
@@ -126,8 +126,8 @@ class RecordingClient(NoOpClient):
         self.updates.append(params)
 
 
-def _client(server: FakeServer) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.MockTransport(server.handle))
+def _client(server: FakeServer) -> httpx2.AsyncClient:
+    return httpx2.AsyncClient(transport=httpx2.MockTransport(server.handle))
 
 
 async def test_full_flow_over_streamable_http() -> None:
@@ -181,11 +181,11 @@ async def test_http_error_fails_only_the_request() -> None:
 
 
 async def test_rejected_initialize_is_a_json_rpc_error() -> None:
-    async def reject(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(401, text="Invalid API key")
+    async def reject(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(401, text="Invalid API key")
 
     async with (
-        httpx.AsyncClient(transport=httpx.MockTransport(reject)) as http,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(reject)) as http,
         connect_http_transport(URL, client=http) as (reader, writer),
     ):
         conn = ClientSideConnection(lambda _agent: NoOpClient(), writer, reader)

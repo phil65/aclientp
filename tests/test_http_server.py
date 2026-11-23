@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import uuid
 
 import anyenv
-import httpx
+import httpx2
 import pytest
 
 from aclientp.agent.protocol import Agent
@@ -125,12 +125,12 @@ async def url(request: pytest.FixtureRequest) -> AsyncIterator[str]:
     agent = serve(lambda conn: agent_type(conn), transport, shutdown_event=shutdown)
     task = asyncio.create_task(agent)
     endpoint = f"http://127.0.0.1:{port}/acp"
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         for _ in range(100):
             try:
                 await http.get(endpoint)
                 break
-            except httpx.ConnectError:
+            except httpx2.ConnectError:
                 await asyncio.sleep(0.05)
     yield endpoint
     shutdown.set()
@@ -211,7 +211,7 @@ async def test_websocket(url: str) -> None:
 
 async def test_protocol_errors_and_auth(url: str) -> None:
     init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": 1}}
-    async with httpx.AsyncClient(timeout=TIMEOUT) as http:
+    async with httpx2.AsyncClient(timeout=TIMEOUT) as http:
         assert (await http.post(url, json=init)).status_code == 401
         response = await http.post(url, json=init, headers=AUTH)
         assert response.status_code == 200
@@ -284,12 +284,12 @@ async def test_bridge_relays_a_stdio_agent(tmp_path: Path) -> None:
     task = asyncio.create_task(bridge.run())
     url = f"http://127.0.0.1:{port}/acp"
     try:
-        async with httpx.AsyncClient() as http:
+        async with httpx2.AsyncClient() as http:
             for _ in range(100):
                 try:
                     status = await http.get(f"http://127.0.0.1:{port}/status")
                     break
-                except httpx.ConnectError:
+                except httpx2.ConnectError:
                     await asyncio.sleep(0.05)
             assert status.json()["connections"] == 0
         recorder = RecordingClient()
@@ -343,7 +343,7 @@ async def flood_server() -> AsyncIterator[tuple[str, AcpHttpServer]]:
     from aclientp.agent.connection import AgentSideConnection
 
     async def serve_connection(reader: Any, writer: Any) -> None:
-        conn = AgentSideConnection(lambda c: FloodAgent(c), writer, reader)
+        conn = AgentSideConnection(lambda c: FloodAgent(c), writer, reader)  # type: ignore[abstract]
         await conn.wait_closed()
 
     server = AcpHttpServer(serve_connection, max_buffered_bytes=500, max_output_stall=0.5)
@@ -390,7 +390,7 @@ async def test_slow_client_gets_everything(
 async def test_stalled_client_is_dropped(flood_server: tuple[str, AcpHttpServer]) -> None:
     url, server = flood_server
     init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": 1}}
-    async with httpx.AsyncClient(timeout=TIMEOUT) as http:
+    async with httpx2.AsyncClient(timeout=TIMEOUT) as http:
         response = await http.post(url, json=init)
         connection_id = response.headers["acp-connection-id"]
         headers = {"Acp-Connection-Id": connection_id, "Acp-Session-Id": "flood"}

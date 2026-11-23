@@ -13,7 +13,7 @@ import shutil
 import tempfile
 from typing import TYPE_CHECKING
 
-import httpx
+import httpx2
 
 from aclientp.registry.archive import extract_binary
 
@@ -69,8 +69,8 @@ async def prepare_binary(
 
     logger.info("Downloading binary from %s", dist.archive)
     with tempfile.NamedTemporaryFile(delete=True) as tmp:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=30.0, read=120.0, write=120.0, pool=30.0),
+        async with httpx2.AsyncClient(
+            timeout=httpx2.Timeout(connect=30.0, read=120.0, write=120.0, pool=30.0),
             follow_redirects=True,
         ) as client:
             response = await client.get(dist.archive)

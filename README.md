@@ -44,7 +44,7 @@ Agent Connect Protocol, Agentic Commerce Protocol): **a**gent **client** **p**ro
 - **Typed throughout.** Pydantic models, `mypy --strict`, discriminated unions with
   fallback variants that keep unknown fields (so custom and future messages survive a
   round trip).
-- **Small core.** pydantic, anyio, anyenv, httpx, structlog and upathtools; web
+- **Small core.** pydantic, anyio, anyenv, httpx2, structlog and upathtools; web
   servers, WebSockets and tracing are extras.
 
 ## Installation

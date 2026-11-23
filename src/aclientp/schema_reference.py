@@ -759,10 +759,10 @@ class Reference:
 
 def upstream_tags(protocol_version: int) -> list[str]:
     """Upstream schema tags of ``protocol_version``, oldest first."""
-    import httpx
+    import httpx2
 
     url = f"https://api.github.com/repos/{REPO}/git/matching-refs/tags/schema-v{protocol_version}."
-    response = httpx.get(url, headers={"Accept": "application/vnd.github+json"}, timeout=30)
+    response = httpx2.get(url, headers={"Accept": "application/vnd.github+json"}, timeout=30)
     response.raise_for_status()
     tags = [ref["ref"].removeprefix("refs/tags/") for ref in response.json()]
     return sorted(tags, key=tag_sort_key)
@@ -783,11 +783,11 @@ def tag_sort_key(tag: str) -> tuple[tuple[int, ...], int, str, int]:
 
 def download(protocol_version: int, tag: str) -> dict[str, str]:
     """Download the reference files of ``tag``, verbatim."""
-    import httpx
+    import httpx2
 
     base = f"https://raw.githubusercontent.com/{REPO}/{tag}/schema/v{protocol_version}"
     files: dict[str, str] = {}
-    with httpx.Client(timeout=60) as client:
+    with httpx2.Client(timeout=60) as client:
         for name in REFERENCE_FILES:
             response = client.get(f"{base}/{name}")
             response.raise_for_status()
@@ -921,12 +921,12 @@ class ReferenceChanges:
 def _github(endpoint: str, **params: str | int) -> Any:
     import os
 
-    import httpx
+    import httpx2
 
     headers = {"Accept": "application/vnd.github+json"}
     if token := os.environ.get("GITHUB_TOKEN"):
         headers["Authorization"] = f"Bearer {token}"
-    response = httpx.get(
+    response = httpx2.get(
         f"https://api.github.com/{endpoint}", params=params, headers=headers, timeout=30
     )
     response.raise_for_status()

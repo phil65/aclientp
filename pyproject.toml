@@ -27,20 +27,20 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "anyenv>=2.0.17",
+  "anyenv[httpx2]>=2.0.21",
   "anyio>=4.0",
-  "httpx>=0.28",
+  "httpx2>=2.16",
   "pydantic>=2.14",
   "structlog>=25.0",
   "upathtools>=1.20",
 ]
 
-[project.optional-dependencies]
-bridge = ["starlette", "uvicorn", "websockets"]  # stdio <-> HTTP / WebSocket bridge
-debug = ["fastapi", "uvicorn"]  # Debug server with a mock agent
-http2 = ["httpx[http2]"]  # HTTP/2 for the Streamable HTTP client (required by the RFD)
-tracing = ["logfire"]  # Spans for handled requests
-websocket = ["websockets"]  # WebSocket transport
+[project.urls]
+"Code coverage" = "https://app.codecov.io/gh/phil65/aclientp"
+Discussions = "https://github.com/phil65/aclientp/discussions"
+Documentation = "https://phil65.github.io/aclientp/"
+Issues = "https://github.com/phil65/aclientp/issues"
+Source = "https://github.com/phil65/aclientp"
 
 [project.scripts]
 aclientp-bridge = "aclientp.bridge.__main__:main"
@@ -53,21 +53,21 @@ acp = "aclientp.filesystem:ACPFileSystem"
 [project.entry-points."universal_pathlib.implementations"]
 acp = "aclientp.filesystem:ACPPath"
 
-[project.urls]
-"Code coverage" = "https://app.codecov.io/gh/phil65/aclientp"
-Discussions = "https://github.com/phil65/aclientp/discussions"
-Documentation = "https://phil65.github.io/aclientp/"
-Issues = "https://github.com/phil65/aclientp/issues"
-Source = "https://github.com/phil65/aclientp"
+[project.optional-dependencies]
+bridge = ["starlette", "uvicorn", "websockets"]  # stdio <-> HTTP / WebSocket bridge
+debug = ["fastapi", "uvicorn"]  # Debug server with a mock agent
+http2 = ["httpx2[http2]"]  # HTTP/2 for the Streamable HTTP client (required by the RFD)
+tracing = ["logfire"]  # Spans for handled requests
+websocket = ["websockets"]  # WebSocket transport
 
 [dependency-groups]
 dev = [
   "devtools",
   "pyreadline3",
   "pytest",
-  "pytest-cov",
   # Only add below (Copier)
   "pytest-asyncio",
+  "pytest-cov",
   "pytest-timeout",
 ]
 benchmark = ["pyinstrument"]
