@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ForwardRef, Literal
+from typing import TYPE_CHECKING, Annotated, Any, ForwardRef, Literal
 
-from pydantic import MISSING, BaseModel, Field
+from pydantic import MISSING, BaseModel, Field, StringConstraints, model_validator
 import pytest
 from upathtools import UPath
 
 from aclientp.schema_reference import (
+    REFERENCE_ROOT,
     Finding,
     OurSchema,
+    Reference,
     UpstreamSchema,
     changelog,
     check,
     load_references,
+    main,
     run_check,
     split_known,
     tag_sort_key,
@@ -306,3 +309,191 @@ def test_forward_references_are_resolved() -> None:
     fields = wire_fields(Holder)
 
     assert fields["items"].accepts_none
+
+
+# --- `not` and `if` / `then` constraints -------------------------------------------
+
+MCP_MESSAGE: dict[str, Any] = {  # upstream #2988
+    "type": "object",
+    "properties": {
+        "serverId": {"type": "string"},
+        "sessionId": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "toolCallId": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    },
+    "required": ["serverId"],
+    "if": {"properties": {"toolCallId": {"type": "string"}}, "required": ["toolCallId"]},
+    "then": {"properties": {"sessionId": {"type": "string"}}, "required": ["sessionId"]},
+}
+SET_CONFIG: dict[str, Any] = {  # upstream #2981
+    "type": "object",
+    "properties": {"configId": {"type": "string"}},
+    "required": ["configId"],
+    "anyOf": [
+        {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "const": "boolean"},
+                "value": {"type": "boolean"},
+            },
+            "required": ["type", "value"],
+        },
+        {
+            "title": "value_id",
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "required": ["value"],
+            "not": {"properties": {"type": {"const": "boolean"}}, "required": ["type"]},
+        },
+    ],
+}
+
+
+class McpMessage(BaseModel):
+    server_id: str = Field(alias="serverId")
+    session_id: str | None = Field(default=None, alias="sessionId")
+    tool_call_id: str | None = Field(default=None, alias="toolCallId")
+
+
+class StrictMcpMessage(McpMessage):
+    @model_validator(mode="after")
+    def _needs_session(self) -> StrictMcpMessage:
+        if self.tool_call_id is not None and self.session_id is None:
+            raise ValueError("toolCallId requires sessionId")
+        return self
+
+
+class SetConfig(BaseModel):
+    config_id: str = Field(alias="configId")
+    type: str | None = None
+    value: str | bool
+
+
+class StrictSetConfig(SetConfig):
+    @model_validator(mode="after")
+    def _boolean_needs_bool(self) -> StrictSetConfig:
+        if self.type == "boolean" and not isinstance(self.value, bool):
+            raise ValueError("boolean needs a bool")
+        return self
+
+
+def _probe_ids(model: type[BaseModel], name: str, definition: dict[str, Any]) -> set[str]:
+    upstream = UpstreamSchema.parse(_schema(**{name: definition}), {})
+    return _ids(check(upstream, OurSchema({name: model}, {}), {}))
+
+
+def test_if_then_constraints_are_probed() -> None:
+    upstream = UpstreamSchema.parse(_schema(MessageMcpRequest=MCP_MESSAGE), {})
+    [probe] = upstream.probes
+    assert probe.payload == {"serverId": "x", "toolCallId": "x"}
+    assert probe.control == {"serverId": "x", "toolCallId": "x", "sessionId": "x"}
+
+    loose = _probe_ids(McpMessage, "MessageMcpRequest", MCP_MESSAGE)
+    strict = _probe_ids(StrictMcpMessage, "MessageMcpRequest", MCP_MESSAGE)
+
+    assert loose == {"conditional:MessageMcpRequest.toolCallId->sessionId"}
+    assert strict == set()
+
+
+def test_not_constraints_are_probed() -> None:
+    upstream = UpstreamSchema.parse(_schema(SetSessionConfigOptionRequest=SET_CONFIG), {})
+    [probe] = upstream.probes
+    assert probe.payload == {"configId": "x", "value": "x", "type": "boolean"}
+
+    loose = _probe_ids(SetConfig, "SetSessionConfigOptionRequest", SET_CONFIG)
+    strict = _probe_ids(StrictSetConfig, "SetSessionConfigOptionRequest", SET_CONFIG)
+
+    assert loose == {"accepts-excluded:SetSessionConfigOptionRequest[type=boolean]"}
+    assert strict == set()
+
+
+def test_not_probe_is_skipped_when_another_branch_may_accept_it() -> None:
+    # {"type": "start"} is excluded from the fallback, but the `start` variant accepts it.
+    replay = {
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {"type": {"type": "string", "const": "start"}},
+                "required": ["type"],
+            },
+            {
+                "type": "object",
+                "properties": {"type": {"type": "string"}},
+                "required": ["type"],
+                "not": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": {"type": {"type": "string", "const": "start"}},
+                            "required": ["type"],
+                        }
+                    ]
+                },
+            },
+        ]
+    }
+
+    assert UpstreamSchema.parse(_schema(ReplayFrom=replay), {}).probes == ()
+
+
+def test_control_rejected_by_the_models_is_reported() -> None:
+    class NoNulls(BaseModel):
+        server_id: str = Field(alias="serverId")
+        tool_call_id: str | None = Field(default=None, alias="toolCallId")
+        # rejects every sessionId, so the probe proves nothing
+        session_id: None = Field(default=None, alias="sessionId")
+
+    ids = _probe_ids(NoNulls, "MessageMcpRequest", MCP_MESSAGE)
+
+    assert ids == {"unprobed:MessageMcpRequest.toolCallId->sessionId"}
+
+
+@pytest.mark.parametrize("protocol_version", [1, 2])
+def test_pinned_schemas_probe_2981_and_2988(protocol_version: int) -> None:
+    ids = {probe.id for probe in Reference.load(protocol_version).parsed.probes}
+
+    assert {
+        "conditional:MessageMcpRequest.toolCallId->sessionId",
+        "accepts-excluded:SetSessionConfigOptionRequest[type=boolean]",
+        "accepts-excluded:InitialSessionConfigOption[type=boolean]",
+    } <= ids
+
+
+# --- CLI ------------------------------------------------------------------------
+
+
+def test_check_reports_the_tag_of_the_checked_root(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = UPath(tmp_path)
+    for name in ("schema.unstable.json", "meta.unstable.json", "conformance.toml"):
+        target = root / "v1" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text((REFERENCE_ROOT / "v1" / name).read_text("utf-8"), encoding="utf-8")
+    (root / "v1" / "VERSION").write_text("schema-v1.99.0\n", encoding="utf-8")
+
+    assert run_check(1, root).tag == "schema-v1.99.0"
+    assert main(["check", "--root", str(tmp_path)]) == 0
+    assert "ACP v1 models vs schema-v1.99.0" in capsys.readouterr().out
+
+
+def test_constraints_behind_refs_and_in_optional_members_are_compared() -> None:
+    key_def = {"type": "string", "minLength": 1, "maxLength": 255}
+    prompt = {
+        "type": "object",
+        "properties": {"key": {"anyOf": [{"$ref": "#/$defs/Key"}, {"type": "null"}]}},
+    }
+    upstream = UpstreamSchema.parse(_schema(Key=key_def, Prompt=prompt), {})
+    limited = Annotated[str, StringConstraints(min_length=1, max_length=255)]
+
+    class Loose(BaseModel):
+        key: str | MISSING | None = MISSING
+
+    class Strict(BaseModel):
+        key: limited | MISSING | None = MISSING  # type: ignore[valid-type]
+
+    def ids(model: type[BaseModel]) -> set[str]:
+        ours = OurSchema({"Prompt": model}, {})
+        return _ids(check(upstream, ours, {}, check_constraints=True))
+
+    assert ids(Loose) == {"constraint:Prompt.key"}
+    assert ids(Strict) == set()

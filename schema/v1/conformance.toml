@@ -39,3 +39,9 @@ ToolKind = "ToolCallKind"
 "extra-field:CompactionCapabilities._meta" = "harmless: every AnnotatedObject accepts _meta"
 "extra-field:NoticeCapabilities._meta" = "harmless: every AnnotatedObject accepts _meta"
 "extra-field:SessionCursorsCapabilities._meta" = "harmless: every AnnotatedObject accepts _meta"
+
+# Found by the `not` / `if`-`then` probes (behaviour, not fields).
+"accepts-excluded:CreateElicitationRequest[mode=form]" = "flattened loose model: mode-specific fields are optional, a form request without requestedSchema is accepted"
+"accepts-excluded:CreateElicitationRequest[mode=url]" = "flattened loose model: mode-specific fields are optional, a url request without elicitationId/url is accepted"
+"unprobed:ElicitationPropertySchema[type=array]" = "closed union: no fallback variant for custom or future property schema types, they fail validation"
+"unprobed:MultiSelectItems[type=string]" = "closed union: no fallback variant for custom or future multi-select item types, they fail validation"

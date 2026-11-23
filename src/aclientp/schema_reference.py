@@ -133,6 +133,9 @@ class UpstreamSchema:
     methods: dict[str, frozenset[str]]
     """``meta.unstable.json`` method group to method names."""
 
+    probes: tuple[Probe, ...] = ()
+    """Payloads that upstream rejects through ``not`` or ``if`` / ``then`` constraints."""
+
     @classmethod
     def parse(cls, schema: JSON, meta: JSON) -> UpstreamSchema:
         """Extract shapes, enums, unions and methods from the upstream files."""
@@ -181,7 +184,8 @@ class UpstreamSchema:
         methods = {
             group: frozenset(meta[group].values()) for group in METHOD_GROUPS if group in meta
         }
-        return cls(shapes, enums, unions, methods)
+        probes = tuple(probe for name, node in defs.items() for probe in _probes(name, node, defs))
+        return cls(shapes, enums, unions, methods, probes)
 
     @property
     def inlined_bases(self) -> frozenset[str]:
@@ -238,7 +242,7 @@ def _collect(node: JSON, defs: Mapping[str, JSON]) -> _Collected:
     props = set(own)
     required = set(node.get("required", []))
     nullable = {prop for prop, schema in own.items() if _accepts_null(schema, defs)}
-    constraints = {prop: c for prop, schema in own.items() if (c := _constraints(schema))}
+    constraints = {prop: c for prop, schema in own.items() if (c := _constraints(schema, defs))}
     bases: set[str] = set()
     for part in node.get("allOf", []):
         if ref := part.get("$ref"):
@@ -280,13 +284,21 @@ CONSTRAINT_KEYS = {
 """JSON schema keywords and the pydantic constraints they correspond to."""
 
 
-def _constraints(schema: JSON) -> dict[str, float]:
-    """Numeric and length constraints of a property schema (also inside ``anyOf: [x, null]``)."""
+def _constraints(schema: JSON, defs: Mapping[str, JSON] | None = None) -> dict[str, float]:
+    """Numeric and length constraints of a property schema.
+
+    Also inside ``anyOf: [x, null]`` and, with ``defs``, behind a ``$ref`` to a non-object
+    definition such as a constrained string type.
+    """
     found = {CONSTRAINT_KEYS[k]: float(v) for k, v in schema.items() if k in CONSTRAINT_KEYS}
-    for key in ("anyOf", "oneOf"):
+    if defs is not None and (ref := schema.get("$ref")):
+        target = defs.get(_ref_name(ref), {})
+        if not _is_object(target, defs):
+            found = _constraints(target, defs) | found
+    for key in ("anyOf", "oneOf", "allOf"):
         parts = [part for part in schema.get(key, []) if part.get("type") != "null"]
         if len(parts) == 1:
-            found |= _constraints(parts[0])
+            found |= _constraints(parts[0], defs)
     return found
 
 
@@ -348,6 +360,244 @@ def _parse_branch(name: str, node: JSON, branch: JSON, defs: Mapping[str, JSON])
 
 
 # ---------------------------------------------------------------------------
+# Conditional constraints: ``not`` and ``if`` / ``then``
+# ---------------------------------------------------------------------------
+#
+# These constraints do not show in the fields of a model (a validator enforces them on
+# our side), so they are compared by behaviour: each one yields a payload upstream
+# rejects because of it, and a valid control payload next to it. The models must reject
+# the first and accept the second.
+
+
+@dataclass(frozen=True)
+class Probe:
+    """A payload upstream rejects through a ``not`` or ``if`` / ``then`` constraint."""
+
+    id: str
+    """Finding id if the models accept ``payload``, e.g.
+    ``conditional:MessageMcpRequest.toolCallId->sessionId``."""
+
+    definition: str
+    """Upstream definition to validate against (a model or a union alias of ours)."""
+
+    payload: JSON
+    """Rejected upstream."""
+
+    control: JSON
+    """The same payload without the violation: valid upstream."""
+
+    detail: str
+
+
+_NO_EXAMPLE = object()
+
+
+def _example(schema: Any, defs: Mapping[str, JSON], depth: int = 0) -> Any:  # noqa: PLR0911
+    """A minimal value valid for ``schema`` (required properties only), or ``_NO_EXAMPLE``."""
+    if not isinstance(schema, dict) or depth > 12:  # noqa: PLR2004
+        return _NO_EXAMPLE if schema is False else "x"
+    if ref := schema.get("$ref"):
+        return _example(defs[_ref_name(ref)], defs, depth + 1)
+    if "const" in schema:
+        return schema["const"]
+    if schema.get("enum"):
+        return schema["enum"][0]
+    if _is_object(schema, defs):
+        return _example_object(schema, defs, depth)
+    for key in ("anyOf", "oneOf"):
+        for part in schema.get(key, []):
+            if part.get("type") != "null" and (value := _example(part, defs, depth + 1)) is not (
+                _NO_EXAMPLE
+            ):
+                return value
+    if parts := schema.get("allOf"):
+        return _example(parts[-1], defs, depth + 1)
+    kind = schema.get("type")
+    if isinstance(kind, list):
+        kind = next((k for k in kind if k != "null"), "null")
+    match kind:
+        case "string":
+            return "x" * max(1, int(schema.get("minLength", 1)))
+        case "integer" | "number":
+            if "minimum" in schema:
+                return schema["minimum"]
+            return schema["exclusiveMinimum"] + 1 if "exclusiveMinimum" in schema else 0
+        case "boolean":
+            return False
+        case "array":
+            item = _example(schema.get("items", {}), defs, depth + 1)
+            return [item] * int(schema.get("minItems", 0))
+        case "null":
+            return None
+        case _:
+            return "x"
+
+
+def _example_object(schema: JSON, defs: Mapping[str, JSON], depth: int) -> Any:
+    properties: JSON = dict(schema.get("properties", {}))
+    required: list[str] = list(schema.get("required", []))
+    value: dict[str, Any] = {}
+    for part in schema.get("allOf", []):
+        sub = _example(part, defs, depth + 1)
+        if isinstance(sub, dict):
+            value |= sub
+    branches = schema.get("anyOf", []) + schema.get("oneOf", [])
+    if branches:  # an object with tagged branches: satisfy the first one
+        sub = _example(_merged_branch(schema, branches[0]), defs, depth + 1)
+        if isinstance(sub, dict):
+            value |= sub
+    for prop in required:
+        if prop not in value:
+            sub = _example(properties.get(prop, {}), defs, depth + 1)
+            if sub is _NO_EXAMPLE:
+                return _NO_EXAMPLE
+            value[prop] = sub
+    return value
+
+
+def _merged_branch(node: JSON, branch: JSON) -> JSON:
+    """A branch of an object definition, with the object's own properties."""
+    return {
+        "type": "object",
+        "properties": {**node.get("properties", {}), **branch.get("properties", {})},
+        "required": [*node.get("required", []), *branch.get("required", [])],
+        "allOf": [*node.get("allOf", []), *branch.get("allOf", [])],
+        **({"not": branch["not"]} if "not" in branch else {}),
+    }
+
+
+def _excluded_tags(node: JSON) -> list[tuple[str, Any]]:
+    """``(property, value)`` pairs a ``not`` excludes, e.g. ``not: {type: const boolean}``."""
+    parts = node.get("anyOf", [node])
+    pairs: list[tuple[str, Any]] = []
+    for part in parts:
+        props: JSON = part.get("properties", {})
+        required = part.get("required", [])
+        if len(props) != 1 or list(props) != required or "const" not in next(iter(props.values())):
+            return []
+        prop, schema = next(iter(props.items()))
+        pairs.append((prop, schema["const"]))
+    return pairs
+
+
+def _rejects(schema: Any, value: Any, defs: Mapping[str, JSON], depth: int = 0) -> bool:  # noqa: PLR0911
+    """Whether ``value`` certainly fails ``schema`` (False when unsure)."""
+    if not isinstance(schema, dict) or depth > 12:  # noqa: PLR2004
+        return schema is False
+    if ref := schema.get("$ref"):
+        return _rejects(defs[_ref_name(ref)], value, defs, depth + 1)
+    if "const" in schema and value != schema["const"]:
+        return True
+    if "enum" in schema and value not in schema["enum"]:
+        return True
+    if any(_rejects(part, value, defs, depth + 1) for part in schema.get("allOf", [])):
+        return True
+    for key in ("anyOf", "oneOf"):
+        if (parts := schema.get(key)) and all(_rejects(p, value, defs, depth + 1) for p in parts):
+            return True
+    kind = schema.get("type")
+    if kind is None:
+        return False
+    kinds = kind if isinstance(kind, list) else [kind]
+    if not any(_json_type_matches(k, value) for k in kinds):
+        return True
+    if isinstance(value, dict) and _is_object(schema, defs):
+        collected = _collect(schema, defs)
+        if not collected.required <= value.keys():
+            return True
+        props: JSON = schema.get("properties", {})
+        return any(_rejects(props[k], v, defs, depth + 1) for k, v in value.items() if k in props)
+    return False
+
+
+def _json_type_matches(kind: str, value: Any) -> bool:  # noqa: PLR0911
+    match kind:
+        case "null":
+            return value is None
+        case "boolean":
+            return isinstance(value, bool)
+        case "integer":
+            return isinstance(value, int) and not isinstance(value, bool)
+        case "number":
+            return isinstance(value, int | float) and not isinstance(value, bool)
+        case "string":
+            return isinstance(value, str)
+        case "array":
+            return isinstance(value, list)
+        case "object":
+            return isinstance(value, dict)
+    return True
+
+
+def _probes(name: str, node: JSON, defs: Mapping[str, JSON]) -> Iterator[Probe]:
+    """Probes of the ``not`` and ``if`` / ``then`` constraints of definition ``name``."""
+    conditional = isinstance(node.get("if"), dict) and isinstance(node.get("then"), dict)
+    if conditional and (probe := _conditional_probe(name, node, defs)):
+        yield probe
+    branches: list[JSON] = node.get("anyOf", []) + node.get("oneOf", [])
+    is_object = "properties" in node or node.get("type") == "object"
+    for index, branch in enumerate(branches):
+        if "not" not in branch:
+            continue
+        resolved = _merged_branch(node, branch) if is_object else branch
+        base = _example({k: v for k, v in resolved.items() if k != "not"}, defs)
+        if not isinstance(base, dict):
+            continue
+        siblings = [
+            _merged_branch(node, other) if is_object else other
+            for i, other in enumerate(branches)
+            if i != index
+        ]
+        for prop, value in _excluded_tags(branch["not"]):
+            payload = {**base, prop: value}
+            if not all(_rejects(sibling, payload, defs) for sibling in siblings):
+                continue  # another branch may accept it: not a certain rejection
+            yield Probe(
+                f"accepts-excluded:{name}[{prop}={value}]",
+                name,
+                payload,
+                base,
+                f"upstream excludes {prop}={value!r} from a fallback branch, the models accept it",
+            )
+
+
+def _conditional_probe(name: str, node: JSON, defs: Mapping[str, JSON]) -> Probe | None:
+    condition: JSON = node["if"]
+    consequence: JSON = node["then"]
+    when = list(condition.get("required", [])) or [
+        prop for prop in condition.get("properties", {}) if prop in node.get("required", [])
+    ]
+    needs = [prop for prop in consequence.get("required", []) if prop not in when]
+    if not when or not needs:
+        return None
+    base = _example({k: v for k, v in node.items() if k not in ("if", "then", "else")}, defs)
+    if not isinstance(base, dict):
+        return None
+    props: JSON = node.get("properties", {})
+    control = dict(base)
+    for prop in when:
+        schema = condition.get("properties", {}).get(prop) or props.get(prop, {})
+        control[prop] = _example(schema, defs)
+    for prop in needs:
+        schema = consequence.get("properties", {}).get(prop) or props.get(prop, {})
+        if "$ref" not in schema and prop in props:
+            schema = {"allOf": [props[prop], schema]}
+        control[prop] = _example(schema, defs)
+    if any(v is _NO_EXAMPLE for v in control.values()):
+        return None
+    payload = {k: v for k, v in control.items() if k not in needs}
+    if_part = "+".join(when)
+    then_part = "+".join(needs)
+    return Probe(
+        f"conditional:{name}.{if_part}->{then_part}",
+        name,
+        payload,
+        control,
+        f"upstream requires {then_part} when {if_part} is given, the models do not",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Hand-written models
 # ---------------------------------------------------------------------------
 
@@ -404,6 +654,15 @@ def _is_type_alias(obj: object) -> bool:
     return get_origin(obj) in (Literal, Annotated, Union)
 
 
+def _members(tp: object) -> list[object]:
+    """Members of a union annotation, keeping ``Annotated`` members whole."""
+    if isinstance(tp, TypeAliasType):
+        return _members(tp.__value__)
+    if get_origin(tp) is Union or isinstance(tp, types.UnionType):
+        return [m for arg in get_args(tp) for m in _members(arg)]
+    return [tp]
+
+
 def _flatten(tp: object) -> Iterator[object]:
     """Members of a (possibly annotated or aliased) union; ``Literal`` stays whole."""
     if isinstance(tp, TypeAliasType):
@@ -458,7 +717,13 @@ def wire_fields(model: type[BaseModel]) -> dict[str, FieldInfo]:
 
 def _field_constraints(info: PydanticFieldInfo) -> dict[str, float]:
     found: dict[str, float] = {}
-    for item in info.metadata:
+    # A constrained type in an optional field (``Key | MISSING | None`` with
+    # ``Key = Annotated[str, StringConstraints(...)]``) keeps its metadata on the member.
+    members = [m for m in _members(info.annotation) if m not in (type(None), MISSING)]
+    metadata = list(info.metadata)
+    if len(members) == 1 and get_origin(members[0]) is Annotated:
+        metadata.extend(get_args(members[0])[1:])
+    for item in metadata:
         for name in ("ge", "le", "gt", "lt", "min_length", "max_length"):
             value = getattr(item, name, None)
             if isinstance(value, int | float):
@@ -574,7 +839,35 @@ def check(
         )
     findings.extend(_check_enums(upstream, ours, renames))
     findings.extend(_check_methods(upstream, ours))
+    findings.extend(_check_probes(upstream, ours, renames))
     return findings
+
+
+def _check_probes(
+    upstream: UpstreamSchema, ours: OurSchema, renames: Mapping[str, str]
+) -> Iterator[Finding]:
+    from pydantic import TypeAdapter, ValidationError
+
+    for probe in upstream.probes:
+        target = renames.get(probe.definition, probe.definition)
+        model: object = ours.models.get(target) or ours.aliases.get(target)
+        if model is None:
+            continue  # reported as a missing shape or union
+        adapter: TypeAdapter[Any] = TypeAdapter(model)
+        try:
+            adapter.validate_json(json.dumps(probe.control))
+        except ValidationError as exc:
+            yield Finding(
+                f"unprobed:{probe.id.split(':', 1)[1]}",
+                f"the models reject the valid control payload {probe.control}, so the "
+                f"constraint cannot be checked: {exc.errors()[0]['msg']}",
+            )
+            continue
+        try:
+            adapter.validate_json(json.dumps(probe.payload))
+        except ValidationError:
+            continue
+        yield Finding(probe.id, f"{probe.detail}: {probe.payload}")
 
 
 def _check_enums(
@@ -691,6 +984,9 @@ class Report:
     stale: dict[str, str]
     """Listed differences that no longer occur."""
 
+    tag: str = ""
+    """Upstream tag of the checked reference."""
+
     @property
     def ok(self) -> bool:
         return not self.new and not self.stale
@@ -711,7 +1007,7 @@ def run_check(protocol_version: int, root: UPath = REFERENCE_ROOT) -> Report:
     )
     if conformance.allow_missing:
         findings = [f for f in findings if not f.id.startswith(MISSING_KINDS)]
-    return split_known(findings, conformance.known)
+    return replace(split_known(findings, conformance.known), tag=reference.tag)
 
 
 MISSING_KINDS = ("missing-shape:", "missing-enum:", "missing-method:")
@@ -991,8 +1287,7 @@ def update_reference(name: str, commit: str, path: UPath = REFERENCES_FILE) -> N
 
 
 def _print_report(protocol_version: int, report: Report) -> None:
-    reference = Reference.load(protocol_version)
-    print(f"ACP v{protocol_version} models vs {reference.tag}")
+    print(f"ACP v{protocol_version} models vs {report.tag}")
     for finding in report.new:
         print(f"  NEW    {finding.id}: {finding.detail}")
     for key, reason in report.stale.items():
@@ -1040,7 +1335,13 @@ def main(argv: list[str] | None = None) -> int:
     sync = commands.add_parser("sync", help="update the pinned reference")
     sync.add_argument("--tag", help="upstream tag (default: newest)")
     sync.add_argument("--dry-run", action="store_true", help="only print the changelog")
-    commands.add_parser("check", help="compare the models with the pinned reference")
+    check_parser = commands.add_parser("check", help="compare the models with the pinned reference")
+    check_parser.add_argument(
+        "--root",
+        type=UPath,
+        default=REFERENCE_ROOT,
+        help="directory holding v1/ and v2/ references (default: the pinned ones)",
+    )
     refs = commands.add_parser("refs", help="changes in the pinned reference implementations")
     refs.add_argument("--update", metavar="NAME", help="move the pin of this reference")
     refs.add_argument("--commit", help="commit to pin (default: the current upstream head)")
@@ -1073,7 +1374,7 @@ def main(argv: list[str] | None = None) -> int:
     if version not in MODEL_PACKAGES:
         print(f"no models for ACP v{version} yet", file=sys.stderr)
         return 1
-    report = run_check(version)
+    report = run_check(version, args.root)
     _print_report(version, report)
     return 0 if report.ok else 1
 

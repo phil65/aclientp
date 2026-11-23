@@ -8,14 +8,14 @@
 
 [typescript-sdk]
 repo = "agentclientprotocol/typescript-sdk"
-commit = "91fb159225ead6f18da4dac078cd6318b221a0b2"
-schema = ["schema-v1.33.0", "schema-v2.0.0-alpha.17"]
+commit = "be320929c2b0a0fe7764023f83fbe307445c36d1"
+schema = ["schema-v1.34.1", "schema-v2.0.0-beta.3"]
 paths = ["src/protocol-router.ts", "src/v2", "src/core/jsonrpc.ts", "src/v1"]
 description = "Official TypeScript SDK: version router, v1/v2 agent and client bindings"
 
 [claude-agent-acp]
 repo = "agentclientprotocol/claude-agent-acp"
-commit = "e62d084e9d86ff66c30e8d1fa7fec10017da172b"
-schema = ["schema-v1.33.0", "schema-v2.0.0-alpha.17"]
+commit = "105e1c38daf76bc832e872e95904be6dabd32372"
+schema = ["schema-v1.34.1", "schema-v2.0.0-beta.3"]
 paths = ["src/v2", "src/v1/acp-agent.ts"]
-description = "Claude Code ACP adapter (v0.108.1): a production agent serving v1 and v2"
+description = "Claude Code ACP adapter (v0.110.0): a production agent serving v1 and v2"

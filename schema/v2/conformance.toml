@@ -23,3 +23,11 @@ check_constraints = true
 "extra-field:ClientRequest.jsonrpc" = "upstream adds jsonrpc at the top level of the schema, not per envelope"
 "extra-field:ProxyNotification.jsonrpc" = "upstream adds jsonrpc at the top level of the schema, not per envelope"
 "extra-field:ProxyRequest.jsonrpc" = "upstream adds jsonrpc at the top level of the schema, not per envelope"
+
+# Found by the `not` / `if`-`then` probes (behaviour, not fields).
+"conditional:Error.code->data" = "Error is also read from peers: a -32022 without data stays readable instead of failing the whole message"
+"constraint:InitializeProxyRequest.protocolVersion" = "ProtocolVersion stays an unbounded int, so initialize can answer an out-of-range version with its own"
+"constraint:InitializeProxyResponse.protocolVersion" = "ProtocolVersion stays an unbounded int, so initialize can answer an out-of-range version with its own"
+"constraint:InitializeRequest.protocolVersion" = "ProtocolVersion stays an unbounded int, so initialize can answer an out-of-range version with its own"
+"constraint:InitializeResponse.protocolVersion" = "ProtocolVersion stays an unbounded int, so initialize can answer an out-of-range version with its own"
+"constraint:UnsupportedProtocolVersionErrorData.requested" = "ProtocolVersion stays an unbounded int, so initialize can answer an out-of-range version with its own"
