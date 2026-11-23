@@ -125,6 +125,9 @@ A v2 client subclasses `aclientp.v2.client.Client` and talks through
   marker by its dotted camelCase path (omitted or `null` anywhere on the path means
   unsupported).
 
+A v2 agent that advertises `capabilities.session` MUST deduplicate `session/prompt`
+retries by `idempotencyKey`: see [Prompt retries](#prompt-retries-v2-idempotency-keys).
+
 `spawn_stdio_transport` always reads a piped stderr in the background, so an agent
 can never block on a full pipe: pass `on_stderr=` for the lines (or `log_stderr=True`),
 otherwise they are discarded. To read stderr yourself, pass another `stderr=`.
@@ -175,6 +178,38 @@ variables:
 }
 ```
 
+## Prompt retries (v2 idempotency keys)
+
+A v2 client sends the same `idempotencyKey` on every attempt of one `session/prompt`.
+An agent advertising `capabilities.session` inserts at most one user message per key and
+session, answers a retry with the original `messageId` and starts no second turn, and
+recognizes the key as long as it keeps the message, across restarts. Invalid keys (empty,
+over 255 characters, not a string) fail validation of `PromptRequest`, which the connection
+answers with `-32602`.
+
+`aclientp.v2.idempotency.IdempotencyStore` does the bookkeeping; give it a backend on your
+session storage (anything with async `get(session_id, key)` and
+`put(session_id, key, message_id)`; the default keeps records in memory):
+
+```python
+from aclientp.v2.idempotency import IdempotencyStore
+
+store = IdempotencyStore(MySessionStorageBackend(storage))
+
+
+async def prompt(self, params: PromptRequest) -> PromptResponse:
+    async with store.claim(params.session_id, params.idempotency_key) as claim:
+        if claim.message_id is not None:  # a retry: already inserted
+            return PromptResponse(message_id=claim.message_id)
+        message_id = insert_user_message(params)  # raising records nothing
+        await claim.record(message_id)
+    start_turn(params.session_id, message_id)
+    return PromptResponse(message_id=message_id)
+```
+
+Attempts with the same key wait for each other, so a retry that arrives while the first
+attempt is still inserting gets its `messageId` instead of inserting again.
+
 ## Message ordering
 
 Incoming requests and notifications are handled concurrently, each in its own task,
@@ -208,13 +243,17 @@ uv run python -m aclientp.schema_reference check            # models vs pinned s
 uv run python -m aclientp.schema_reference refs             # changes in reference implementations
 ```
 
-Use `--protocol 2` for v2. `schema/<version>/conformance.toml` lists renames and known
-differences; the test suite runs the same check, so undocumented drift fails CI.
+Use `--protocol 2` for v2, and `check --root DIR` to check against another directory of
+references (e.g. a downloaded tag). The check compares fields, required/optional,
+nullability, limits (also behind `$ref`s), enums, union variants and methods, and probes
+`not` and `if`/`then` constraints with payloads upstream rejects (the models must reject
+them too). `schema/<version>/conformance.toml` lists renames and known differences; the
+test suite runs the same check, so undocumented drift fails CI.
 `schema/references.toml` pins reference implementations (the official TypeScript SDK
 and claude-agent-acp) by commit; `refs` lists the upstream commits since each pin with
 a compare link.
 
 ## Status
 
-v1 follows `schema-v1.33.0`, v2 follows the draft `schema-v2.0.0-beta.3`. The v2
+v1 follows `schema-v1.35.0`, v2 follows the draft `schema-v2.0.0-beta.4`. The v2
 API is **unstable** and follows the draft as it changes.
