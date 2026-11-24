@@ -155,15 +155,31 @@ with the TypeScript SDK's experimental clients):
 
 ```python
 from aclientp import HttpTransport, serve
-from aclientp.http_server import bearer_token_auth
+from aclientp.server_auth import bearer_token_auth
 
 
 auth = bearer_token_auth(token)
 await serve(lambda conn: MyAgent(conn), HttpTransport(host="0.0.0.0", port=8765, authenticate=auth))
 ```
 
+`WebSocketTransport(host=..., port=..., authenticate=auth)` serves plain WebSocket (any
+path, one JSON-RPC message per text frame).
+
+Agents run tools on the serving machine, so every server (both transports and the
+bridges) checks the handshake before any ACP message (`aclientp.server_auth`):
+
+- Off loopback it refuses to start without `authenticate` (`InsecureServerError`; pass
+  `allow_unauthenticated=True` behind an authenticating proxy). Callers it rejects get
+  401. Tokens travel as `Authorization: Bearer <token>`, for WebSocket on the upgrade
+  request (`connect_remote_transport(url, headers=...)`); query parameters are not
+  accepted.
+- Requests with an `Origin` header (browsers) get 403 unless the origin is in
+  `allow_origins` (`"*"`: any). Browsers apply no CORS to WebSockets, so without this
+  any web page could drive a local agent. Requests without `Origin` pass. Browsers
+  cannot set headers on a WebSocket: browser clients use Streamable HTTP.
+
 `aclientp-bridge -- my-agent --flag` serves a stdio agent this way, one subprocess per
-connection.
+connection (`--token` or `ACP_BRIDGE_TOKEN`, `--allow-origin`).
 
 For clients that only launch local agents, `aclientp-connect` relays stdio to a remote
 agent (either transport, by URL scheme). Header values may reference environment

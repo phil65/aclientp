@@ -18,7 +18,8 @@ from typing import TYPE_CHECKING, Any
 import anyenv
 import websockets
 
-from aclientp.transports import spawn_stdio_transport
+from aclientp.server_auth import check_exposure
+from aclientp.transports import spawn_stdio_transport, websocket_handshake_guard
 
 
 if TYPE_CHECKING:
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
 
     from anyio.abc import ByteReceiveStream, ByteSendStream, Process
     from websockets.asyncio.server import ServerConnection
+
+    from aclientp.server_auth import HandshakeAuthenticate
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,15 @@ class ACPWebSocketServer:
 
     cwd: str | Path | None = None
     """working directory for the subprocess."""
+
+    authenticate: HandshakeAuthenticate | None = None
+    """Identifies clients from the upgrade request (None: 401). Required off loopback."""
+
+    allow_origins: list[str] = field(default_factory=list)
+    """Browser origins allowed to connect; other ``Origin`` headers get 403."""
+
+    allow_unauthenticated: bool = False
+    """Serve without ``authenticate`` off loopback anyway (e.g. behind a proxy)."""
 
     def __post_init__(self) -> None:
         self._process: Process | None = None
@@ -133,6 +145,13 @@ class ACPWebSocketServer:
 
     async def serve(self) -> None:
         """Start the WebSocket server and agent process."""
+        check_exposure(
+            self.host,
+            authenticated=self.authenticate is not None,
+            allow_unauthenticated=self.allow_unauthenticated,
+            what="the ACP WebSocket bridge",
+        )
+        guard = websocket_handshake_guard(self.authenticate, self.allow_origins)
         cmd_str = f"{self.command} {' '.join(self.args)}".strip()
         logger.info("Starting ACP agent: %s", cmd_str)
 
@@ -147,7 +166,9 @@ class ACPWebSocketServer:
             # Start forwarding agent output to WebSocket
             forward_task = asyncio.create_task(self._agent_to_websocket())
             try:
-                async with websockets.serve(self._handle_client, self.host, self.port):
+                async with websockets.serve(
+                    self._handle_client, self.host, self.port, process_request=guard
+                ):
                     logger.info("WebSocket server running on ws://%s:%d", self.host, self.port)
                     await self._shutdown.wait()
             finally:

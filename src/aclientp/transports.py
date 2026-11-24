@@ -20,17 +20,19 @@ from anyio.abc import ByteReceiveStream, ByteSendStream
 
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Callable, Mapping
+    from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
     from pathlib import Path
 
     from anyio.abc import Process
     from websockets.asyncio.server import ServerConnection
+    from websockets.http11 import Request, Response
 
     from aclientp.agent.connection import AgentSideConnection
     from aclientp.agent.protocol import Agent
     from aclientp.connection import StreamObserver
     from aclientp.http_server import Authenticate
     from aclientp.router import RoutedAgentConnection
+    from aclientp.server_auth import HandshakeAuthenticate
     from aclientp.v2.agent import Agent as V2Agent, AgentSideConnection as V2AgentSideConnection
 
 logger = logging.getLogger(__name__)
@@ -55,15 +57,27 @@ class WebSocketTransport:
     """Configuration for WebSocket server transport.
 
     Runs an ACP agent as a WebSocket server that accepts client connections.
-    Each client connection gets its own agent instance.
+    Each client connection gets its own agent instance. The handshake is checked before
+    any ACP message (see :mod:`aclientp.server_auth`): browser origins not in
+    ``allow_origins`` get 403, callers ``authenticate`` rejects 401.
 
     Attributes:
         host: Host to bind the WebSocket server to.
         port: Port for the WebSocket server.
+        authenticate: Identifies callers from the upgrade request's headers (None:
+            rejected with 401), e.g. :func:`~aclientp.server_auth.bearer_token_auth`.
+            Required off loopback.
+        allow_origins: Browser origins allowed to connect (``*``: any). Requests with
+            another ``Origin`` header are refused; requests without one are allowed.
+        allow_unauthenticated: Serve without ``authenticate`` off loopback anyway (e.g.
+            behind a proxy that authenticates).
     """
 
     host: str = "localhost"
     port: int = 8765
+    authenticate: HandshakeAuthenticate | None = None
+    allow_origins: list[str] = field(default_factory=list)
+    allow_unauthenticated: bool = False
 
 
 @dataclass
@@ -79,8 +93,12 @@ class HttpTransport:
         port: Port to listen on.
         path: Endpoint path.
         authenticate: Identifies callers (None rejects with 401); connections belong to
-            their creator. None accepts every caller, for local use only.
-        allow_origins: CORS origins for browser clients.
+            their creator. None accepts every caller, for local use only: required off
+            loopback.
+        allow_origins: CORS origins for browser clients (``*``: any). Requests with
+            another ``Origin`` header are refused (403), WebSocket upgrades included.
+        allow_unauthenticated: Serve without ``authenticate`` off loopback anyway (e.g.
+            behind a proxy that authenticates).
         max_buffered_bytes: Output a connection may hold for its client before the agent's
             writes wait.
         max_output_stall: Seconds a client may take no output while over that limit
@@ -94,6 +112,7 @@ class HttpTransport:
     allow_origins: list[str] = field(default_factory=list)
     max_buffered_bytes: int = 64 * 1024 * 1024
     max_output_stall: float = 60.0
+    allow_unauthenticated: bool = False
 
 
 @dataclass
@@ -237,8 +256,8 @@ async def serve(
     match transport:
         case StdioTransport():
             await _serve_stdio(spec, shutdown_event)
-        case WebSocketTransport(host=host, port=port):
-            await _serve_websocket(spec, host, port, shutdown_event)
+        case WebSocketTransport():
+            await _serve_websocket(spec, transport, shutdown_event)
         case HttpTransport():
             await _serve_http(spec, transport, shutdown_event)
         case StreamTransport(reader=reader, writer=writer):
@@ -283,14 +302,52 @@ async def _serve_streams(
     await _run_until_closed(spec.connect(writer, reader), shutdown_event)
 
 
+def websocket_handshake_guard(
+    authenticate: HandshakeAuthenticate | None, allow_origins: list[str]
+) -> Callable[[ServerConnection, Request], Awaitable[Response | None]]:
+    """A ``process_request`` hook for ``websockets.serve`` checking Origin and auth.
+
+    Foreign browser origins get 403 and callers ``authenticate`` rejects 401, before the
+    upgrade (see :mod:`aclientp.server_auth`).
+    """
+    from http import HTTPStatus
+
+    from aclientp.server_auth import origin_allowed
+
+    async def process_request(connection: ServerConnection, request: Request) -> Response | None:
+        origins = request.headers.get_all("Origin")
+        origin = origins[0] if len(origins) == 1 else None
+        if len(origins) > 1 or not origin_allowed(origin, allow_origins):
+            logger.warning("Refused WebSocket client from origin %r", origin or origins)
+            return connection.respond(HTTPStatus.FORBIDDEN, "Forbidden origin\n")
+        if authenticate is not None:
+            if len(request.headers.get_all("Authorization")) > 1:
+                return connection.respond(HTTPStatus.UNAUTHORIZED, "Unauthorized\n")
+            if await authenticate(request) is None:
+                return connection.respond(HTTPStatus.UNAUTHORIZED, "Unauthorized\n")
+        return None
+
+    return process_request
+
+
 async def _serve_websocket(
     spec: _AgentSpec,
-    host: str,
-    port: int,
+    transport: WebSocketTransport,
     shutdown_event: asyncio.Event | None,
 ) -> None:
     """Run agent as WebSocket server."""
     import websockets
+
+    from aclientp.server_auth import check_exposure
+
+    host, port = transport.host, transport.port
+    check_exposure(
+        host,
+        authenticated=transport.authenticate is not None,
+        allow_unauthenticated=transport.allow_unauthenticated,
+        what="ACP over WebSocket",
+    )
+    guard = websocket_handshake_guard(transport.authenticate, transport.allow_origins)
 
     shutdown = shutdown_event or asyncio.Event()
     connections: list[AgentSideConnection | RoutedAgentConnection] = []
@@ -313,7 +370,7 @@ async def _serve_websocket(
             logger.info("WebSocket client disconnected")
 
     logger.info("Starting WebSocket server on ws://%s:%d", host, port)
-    async with websockets.serve(handle_client, host, port):
+    async with websockets.serve(handle_client, host, port, process_request=guard):
         logger.info("WebSocket server running on ws://%s:%d", host, port)
         await shutdown.wait()
 
@@ -331,6 +388,14 @@ async def _serve_http(
     import uvicorn
 
     from aclientp.http_server import AcpHttpServer
+    from aclientp.server_auth import check_exposure
+
+    check_exposure(
+        transport.host,
+        authenticated=transport.authenticate is not None,
+        allow_unauthenticated=transport.allow_unauthenticated,
+        what="ACP over HTTP",
+    )
 
     async def serve_connection(reader: ByteReceiveStream, writer: ByteSendStream) -> None:
         await _run_until_closed(spec.connect(writer, reader), None)

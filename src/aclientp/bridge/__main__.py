@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import logging
+import os
 import sys
 
 import anyio
@@ -69,7 +70,18 @@ def main() -> None:
         "--allow-origin",
         action="append",
         default=[],
-        help="Allowed CORS origins (HTTP only). Can be specified multiple times.",
+        help=(
+            "Browser origin allowed to connect (CORS for HTTP; other origins are refused). "
+            "Can be specified multiple times."
+        ),
+    )
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("ACP_BRIDGE_TOKEN"),
+        help=(
+            "Bearer token clients must send (Authorization: Bearer <token>). Required "
+            "when binding to a non-loopback host. Default: $ACP_BRIDGE_TOKEN"
+        ),
     )
     parser.add_argument(
         "--cwd",
@@ -83,6 +95,13 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
 
+    from aclientp.server_auth import InsecureServerError, check_exposure
+
+    try:
+        check_exposure(parsed.host, authenticated=bool(parsed.token), what="the ACP bridge")
+    except InsecureServerError as exc:
+        parser.error(f"{exc}; pass --token (or ACP_BRIDGE_TOKEN)")
+
     logging.basicConfig(
         level=getattr(logging, parsed.log_level),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -95,6 +114,7 @@ def main() -> None:
         logging.getLogger("websockets").setLevel(logging.WARNING)
 
         from aclientp.bridge.ws_server import ACPWebSocketServer
+        from aclientp.server_auth import bearer_token_auth
 
         port = parsed.port or 8765
         server = ACPWebSocketServer(
@@ -103,6 +123,8 @@ def main() -> None:
             host=parsed.host,
             port=port,
             cwd=parsed.cwd,
+            authenticate=bearer_token_auth(parsed.token) if parsed.token else None,
+            allow_origins=parsed.allow_origin,
         )
 
         print(f"🔗 ACP WebSocket bridge starting on ws://{parsed.host}:{port}")
@@ -119,6 +141,7 @@ def main() -> None:
             port=port,
             log_level=parsed.log_level,
             allow_origins=parsed.allow_origin if parsed.allow_origin else None,
+            token=parsed.token,
         )
 
         bridge = ACPBridge(

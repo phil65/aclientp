@@ -31,6 +31,10 @@ output its client has not taken, the agent's writes wait; a client that takes no
 ``max_output_stall`` seconds meanwhile is dropped (HTTP and WebSocket alike).
 
 Each connection runs its own agent connection, like the WebSocket transport.
+
+Security (see :mod:`aclientp.server_auth`): ``authenticate`` checks every request and
+WebSocket upgrade (401), and requests whose ``Origin`` is not in ``allow_origins`` are
+refused (403) before that, so web pages cannot drive a local agent.
 """
 
 from __future__ import annotations
@@ -40,7 +44,6 @@ from collections import deque
 from collections.abc import Awaitable, Callable
 import contextlib
 from dataclasses import dataclass, field
-import hmac
 import logging
 from typing import TYPE_CHECKING, Any
 import uuid
@@ -48,6 +51,8 @@ import uuid
 import anyenv
 import anyio
 from anyio.abc import ByteReceiveStream, ByteSendStream
+
+from aclientp.server_auth import bearer_token_auth, origin_allowed
 
 
 if TYPE_CHECKING:
@@ -95,16 +100,15 @@ type ServeConnection = Callable[[ByteReceiveStream, ByteSendStream], Awaitable[N
 type Authenticate = Callable[[HTTPConnection], Awaitable[str | None]]
 """Identifies the caller (None: rejected with 401). Connections belong to their creator."""
 
+__all__ = ["AcpHttpServer", "Authenticate", "ServeConnection", "bearer_token_auth"]
 
-def bearer_token_auth(token: str) -> Authenticate:
-    """Authenticate with ``Authorization: Bearer <token>``."""
-    expected = f"Bearer {token}".encode()
 
-    async def authenticate(conn: HTTPConnection) -> str | None:
-        given = conn.headers.get("authorization", "").encode()
-        return "bearer" if hmac.compare_digest(given, expected) else None
-
-    return authenticate
+def _origin_allowed(conn: HTTPConnection, allow_origins: list[str]) -> bool:
+    """Browser requests (with ``Origin``) only from allowed origins; see server_auth."""
+    origins = conn.headers.getlist("origin")
+    if len(origins) > 1:
+        return False
+    return origin_allowed(origins[0] if origins else None, allow_origins)
 
 
 def _id_key(message_id: object) -> str | None:
@@ -341,6 +345,15 @@ def _text(body: str, status: int) -> Response:
     return PlainTextResponse(body, status_code=status)
 
 
+async def _deny(websocket: WebSocket, reason: str, status: int) -> None:
+    """Refuse a WebSocket upgrade before accepting it."""
+    # A real HTTP status where the server supports denial responses (uvicorn does)
+    if "websocket.http.response" in websocket.scope.get("extensions", {}):
+        await websocket.send_denial_response(_text(reason, status))
+    else:
+        await websocket.close(code=1008, reason=reason)
+
+
 @dataclass
 class AcpHttpServer:
     """ASGI app serving ACP over Streamable HTTP and WebSocket on one endpoint."""
@@ -351,7 +364,8 @@ class AcpHttpServer:
     authenticate: Authenticate | None = None
     """Caller identification; None accepts everyone (local use only)."""
     allow_origins: list[str] = field(default_factory=list)
-    """CORS origins for browser clients."""
+    """Origins of browser clients (CORS). Requests with another ``Origin`` header are
+    refused with 403, WebSocket upgrades included; requests without one are allowed."""
     max_buffered_bytes: int = DEFAULT_MAX_BUFFERED_BYTES
     """Output a connection may hold for its client before the agent has to wait."""
     max_output_stall: float = DEFAULT_MAX_OUTPUT_STALL_SECONDS
@@ -446,6 +460,17 @@ class AcpHttpServer:
             except TimeoutError:
                 task.cancel()
 
+    async def _admit(self, conn: HTTPConnection) -> str | tuple[str, int]:
+        """The caller's identity, or why it is refused (reason, HTTP status).
+
+        The Origin check comes first: browsers apply no CORS to WebSockets, and a page
+        must not reach the agent even on an unauthenticated local server.
+        """
+        if not _origin_allowed(conn, self.allow_origins):
+            return "Forbidden origin", 403
+        owner = await self._caller(conn)
+        return ("Unauthorized", 401) if owner is None else owner
+
     async def _caller(self, conn: HTTPConnection) -> str | None:
         if self.authenticate is None:
             return "anonymous"
@@ -461,9 +486,9 @@ class AcpHttpServer:
     # --- HTTP -------------------------------------------------------------------------
 
     async def _http(self, request: Request) -> Response:
-        owner = await self._caller(request)
-        if owner is None:
-            return _text("Unauthorized", 401)
+        owner = await self._admit(request)
+        if isinstance(owner, tuple):
+            return _text(*owner)
         match request.method:
             case "POST":
                 return await self._post(request, owner)
@@ -626,13 +651,9 @@ class AcpHttpServer:
     async def _websocket(self, websocket: WebSocket) -> None:
         from starlette.websockets import WebSocketDisconnect
 
-        owner = await self._caller(websocket)
-        if owner is None:
-            # A real 401 where the server supports denial responses (uvicorn does)
-            if "websocket.http.response" in websocket.scope.get("extensions", {}):
-                await websocket.send_denial_response(_text("Unauthorized", 401))
-            else:
-                await websocket.close(code=1008, reason="Unauthorized")
+        owner = await self._admit(websocket)
+        if isinstance(owner, tuple):
+            await _deny(websocket, *owner)
             return
         connection, agent_input = self._open(owner)
 

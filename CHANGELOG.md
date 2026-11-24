@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.0
+
+- **Security (behaviour change):** the ACP servers check the handshake before any ACP
+  message (new `aclientp.server_auth`):
+  - `WebSocketTransport` had no authentication at all: it gains `authenticate` (e.g.
+    `bearer_token_auth(token)`, checked on the upgrade request's
+    `Authorization: Bearer` header; 401 otherwise), `allow_origins` and
+    `allow_unauthenticated`.
+  - Browser requests are refused (403) unless their `Origin` is in `allow_origins`, on
+    `WebSocketTransport` and on `AcpHttpServer` / `HttpTransport` (HTTP requests and
+    WebSocket upgrades; until now CORS only hid responses, and WebSocket upgrades from
+    any page were accepted). Browsers apply no CORS to WebSockets, so any web page could
+    connect to a local agent (cross-site WebSocket hijacking). Requests without `Origin`
+    (non-browser clients) pass.
+  - `WebSocketTransport`, `HttpTransport` and both bridges refuse to start on a
+    non-loopback host without authentication (`InsecureServerError`, a `ValueError`),
+    unless `allow_unauthenticated=True`.
+  - `aclientp-bridge` (and the `ws_server_cli` bridge) gain `--token` /
+    `ACP_BRIDGE_TOKEN` and `--allow-origin` for both transports; the bridge's `/status`
+    needs the token too.
+- `bearer_token_auth` moved to `aclientp.server_auth` (still importable from
+  `aclientp.http_server`) and works with any request that has `headers`; it rejects an
+  empty token.
+
 ## 0.5.0
 
 Follows upstream `schema-v1.35.0` and `schema-v2.0.0-beta.4`.

@@ -20,6 +20,7 @@ import uvicorn
 
 from aclientp.bridge.settings import BridgeSettings
 from aclientp.http_server import AcpHttpServer
+from aclientp.server_auth import bearer_token_auth, check_exposure
 from aclientp.transports import spawn_stdio_transport
 
 
@@ -63,8 +64,11 @@ class ACPBridge:
     """Bridge server settings."""
 
     def __post_init__(self) -> None:
+        token = self.settings.token
         self._server = AcpHttpServer(
-            self._serve_connection, allow_origins=self.settings.allow_origins or []
+            self._serve_connection,
+            authenticate=bearer_token_auth(token) if token else None,
+            allow_origins=self.settings.allow_origins or [],
         )
 
     async def _serve_connection(self, reader: ByteReceiveStream, writer: ByteSendStream) -> None:
@@ -82,7 +86,10 @@ class ACPBridge:
             tg.start_soon(relay, agent_out, writer)
 
     async def _handle_status(self, request: Request) -> Response:
-        """Health check endpoint."""
+        """Health check endpoint (authenticated like ``/acp``: it shows the command)."""
+        authenticate = self._server.authenticate
+        if authenticate is not None and await authenticate(request) is None:
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
         return JSONResponse({
             "status": "running",
             "command": self.command,
@@ -92,6 +99,12 @@ class ACPBridge:
 
     async def run(self) -> None:
         """Run the bridge server."""
+        check_exposure(
+            self.settings.host,
+            authenticated=bool(self.settings.token),
+            allow_unauthenticated=self.settings.allow_unauthenticated,
+            what="the ACP bridge",
+        )
         app = self._server.app()
         app.router.routes.append(Route("/status", self._handle_status, methods=["GET"]))
         config = uvicorn.Config(
