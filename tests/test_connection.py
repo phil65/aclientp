@@ -471,3 +471,30 @@ async def test_a_notification_handler_awaiting_a_request_does_not_deadlock() -> 
             await asyncio.sleep(0.01)
     assert results == [{"ok": True}]
     await conn.close()
+
+
+async def test_close_while_the_peer_streams_notifications_logs_no_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lines read after close() are dropped, not published into the closed queue."""
+    errors: list[BaseException] = []
+    monkeypatch.setattr(Connection, "_on_receive_error", lambda self, task, exc: errors.append(exc))
+
+    async def handler(method: str, params: Any, is_notification: bool) -> Any:
+        await asyncio.sleep(0)
+
+    writer, reader, peer = make_streams()
+    conn = Connection(handler, writer, reader)
+
+    async def flood() -> None:
+        while True:
+            await peer.send({"jsonrpc": "2.0", "method": "session/update", "params": {}})
+
+    flooding = asyncio.create_task(flood())
+    await asyncio.sleep(0.05)
+    for _ in range(20):  # several close points while lines keep arriving
+        await asyncio.sleep(0)
+    await conn.close()
+    await asyncio.sleep(0.05)
+    flooding.cancel()
+    assert errors == []

@@ -369,6 +369,10 @@ class Connection:
         return message
 
     async def _process_message(self, message: dict[str, Any]) -> None:
+        if self._closed:
+            # close() stops the dispatcher before the receive loop is cancelled; lines
+            # read in between are dropped instead of published into the closed queue.
+            return
         match message:
             case {"method": str() as method, **rest} if "id" not in rest:
                 if method == CANCEL_REQUEST_METHOD:
