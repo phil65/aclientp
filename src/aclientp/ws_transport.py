@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 import anyio
 from anyio.abc import ByteReceiveStream, ByteSendStream
 
+from aclientp._json import single_line
+
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Mapping
@@ -52,7 +54,7 @@ class _FrameReader(ByteReceiveStream):
             except ConnectionClosed as exc:
                 raise anyio.EndOfStream from exc
             if isinstance(frame, str):  # Binary frames are ignored (RFD)
-                return frame.encode() + b"\n"
+                return single_line(frame).encode() + b"\n"
 
     async def aclose(self) -> None:
         pass

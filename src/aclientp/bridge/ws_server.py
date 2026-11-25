@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import anyenv
 import websockets
 
+from aclientp._json import decode_object
 from aclientp.server_auth import check_exposure
 from aclientp.transports import spawn_stdio_transport, websocket_handshake_guard
 
@@ -83,11 +84,10 @@ class ACPWebSocketServer:
             if b"\n" in self._read_buffer:
                 line, self._read_buffer = self._read_buffer.split(b"\n", 1)
                 if line.strip():
-                    try:
-                        return anyenv.load_json(line.decode(), return_type=dict)
-                    except anyenv.JsonLoadError:
-                        logger.exception("Failed to parse JSON from agent")
-                        continue
+                    if (message := decode_object(line)) is not None:
+                        return message
+                    logger.warning("Dropping non-JSON-object agent output: %.200r", line)
+                    continue
 
             # Read more data
             try:
@@ -129,15 +129,14 @@ class ACPWebSocketServer:
 
         try:
             async for raw_message in websocket:
-                try:
-                    message = anyenv.load_json(raw_message, return_type=dict)
-                    logger.debug("WebSocket → Agent: %s", message.get("method", message.get("id")))
-                    await self._send_to_agent(message)
-                except anyenv.JsonLoadError:
-                    logger.exception("Invalid JSON from WebSocket")
-                    error = ({"code": -32700, "message": "Parse error"},)
+                if (message := decode_object(raw_message)) is None:
+                    logger.warning("Invalid JSON-RPC message from WebSocket: %.200r", raw_message)
+                    error = {"code": -32700, "message": "Parse error"}
                     error_response = {"jsonrpc": "2.0", "id": None, "error": error}
                     await websocket.send(anyenv.dump_json(error_response))
+                    continue
+                logger.debug("WebSocket → Agent: %s", message.get("method", message.get("id")))
+                await self._send_to_agent(message)
         except websockets.exceptions.ConnectionClosed:
             logger.info("WebSocket client disconnected")
         finally:

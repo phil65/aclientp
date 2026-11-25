@@ -41,6 +41,8 @@ class FakeServer:
     streams: list[str | None] = field(default_factory=list)
     deleted: bool = False
     pending_prompt: object = None
+    junk: list[str] = field(default_factory=list)
+    """Raw SSE events sent before the messages of every stream."""
 
     def _session_queue(self, session_id: str) -> asyncio.Queue[dict[str, Any] | None]:
         return self.session_queues.setdefault(session_id, asyncio.Queue())
@@ -112,6 +114,8 @@ class FakeServer:
 
         async def events() -> Any:
             yield b":\n\n"  # keep-alive comment
+            for event in self.junk:
+                yield event.encode()
             while (message := await queue.get()) is not None:
                 yield f"data: {anyenv.dump_json(message)}\n\n".encode()
 
@@ -158,6 +162,23 @@ async def test_full_flow_over_streamable_http() -> None:
         assert by_method[key]["acp-session-id"] == SESSION
     assert "acp-session-id" not in by_method["session/new"]
     assert all(h["x-api-key"] == "k" for h, _ in server.posts)
+
+
+async def test_non_object_sse_events_are_dropped() -> None:
+    server = FakeServer(junk=["data: 1\n\n", "data: [1]\n\n", 'data: "x"\n\n', "data: {\n\n"])
+    recorder = RecordingClient()
+    async with (
+        _client(server) as http,
+        connect_http_transport(URL, client=http) as (reader, writer),
+    ):
+        conn = ClientSideConnection(lambda _agent: recorder, writer, reader)
+        async with asyncio.timeout(TIMEOUT):
+            await conn.initialize(InitializeRequest(protocol_version=1))
+            await conn.new_session(NewSessionRequest(cwd="/tmp", mcp_servers=[]))
+            prompt = PromptRequest(session_id=SESSION, prompt=[TextContentBlock(text="hello")])
+            result = await conn.prompt(prompt)
+        await conn.close()
+    assert result.stop_reason == "end_turn"
 
 
 async def test_http_error_fails_only_the_request() -> None:

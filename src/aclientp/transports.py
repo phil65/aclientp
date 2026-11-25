@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any, Literal, assert_never
 import anyio
 from anyio.abc import ByteReceiveStream, ByteSendStream
 
+from aclientp._json import single_line
+
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
@@ -445,11 +447,10 @@ class _WebSocketReadStream(ByteReceiveStream):
         # Read from WebSocket
         try:
             message: str | bytes = await self._websocket.recv()
-            if isinstance(message, str):
-                message = message.encode()
-            # Add newline for JSON-RPC line protocol
-            if not message.endswith(b"\n"):
-                message += b"\n"
+            if isinstance(message, bytes):
+                message = message.decode(errors="replace")
+            # One frame is one message: one line of the JSON-RPC line protocol
+            message = single_line(message).encode() + b"\n"
             self._buffer = message[max_bytes:]
             return message[:max_bytes]
         except Exception as e:

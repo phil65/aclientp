@@ -52,6 +52,7 @@ import anyenv
 import anyio
 from anyio.abc import ByteReceiveStream, ByteSendStream
 
+from aclientp._json import decode_object
 from aclientp.server_auth import bearer_token_auth, origin_allowed
 
 
@@ -258,9 +259,7 @@ class _AgentOutput(ByteSendStream):
         for line in lines:
             if not line.strip():
                 continue
-            try:
-                message = anyenv.load_json(line, return_type=dict)
-            except anyenv.JsonLoadError:
+            if (message := decode_object(line)) is None:
                 logger.warning("Dropping non-JSON-object agent output: %.200r", line)
                 continue
             self._deliver(message)

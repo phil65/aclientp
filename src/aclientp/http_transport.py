@@ -36,6 +36,8 @@ import anyio
 from anyio.abc import ByteReceiveStream, ByteSendStream
 import httpx2
 
+from aclientp._json import decode_object
+
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Mapping
@@ -173,9 +175,7 @@ class _HttpConnection:
                 if data:
                     payload = "\n".join(data)
                     data = []
-                    try:
-                        message = anyenv.load_json(payload, return_type=dict)
-                    except anyenv.JsonLoadError:
+                    if (message := decode_object(payload)) is None:
                         logger.warning("Dropping malformed ACP SSE event: %.200s", payload)
                         continue
                     await self._deliver(message)
@@ -439,9 +439,7 @@ class _PostWriter(ByteSendStream):
         for line in lines:
             if not line.strip():
                 continue
-            try:
-                message = anyenv.load_json(line, return_type=dict)
-            except anyenv.JsonLoadError:
+            if (message := decode_object(line)) is None:
                 logger.warning("Dropping non-JSON-object ACP message: %.200r", line)
                 continue
             await self._connection.send(message)
