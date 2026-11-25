@@ -10,6 +10,7 @@ from pydantic import Field
 from aclientp.schema.base import AnnotatedObject
 from aclientp.schema.common import AuthAccount, AuthState  # noqa: TC001
 from aclientp.schema.elicitation import ElicitationCompleteNotification
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.mcp import MessageMcpNotification
 from aclientp.schema.session_updates import SessionUpdate  # noqa: TC001
 
@@ -65,7 +66,7 @@ class AuthStatusUpdateNotification(AnnotatedObject):
     state: AuthState
     """Whether the agent can start sessions without the user signing in first."""
 
-    accounts: Sequence[AuthAccount] = Field(default_factory=list)
+    accounts: DefaultOnError[SkipInvalidItems[Sequence[AuthAccount]]] = Field(default_factory=list)
     """The accounts the agent has configured, for display."""
 
 

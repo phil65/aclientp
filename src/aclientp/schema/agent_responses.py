@@ -9,6 +9,7 @@ from aclientp.schema.base import Response
 from aclientp.schema.capabilities import AgentCapabilities
 from aclientp.schema.common import AuthAccount, AuthMethod, AuthState, Implementation
 from aclientp.schema.config_options import SessionConfigOption  # noqa: TC001
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.mcp import MessageMcpResponse
 from aclientp.schema.providers import (
     DisableProviderResponse,
@@ -53,13 +54,13 @@ class NewSessionResponse(Response):
     See protocol docs: [Creating a Session](https://agentclientprotocol.com/protocol/session-setup#creating-a-session)
     """
 
-    modes: SessionModeState | None = None
+    modes: DefaultOnError[SessionModeState | None] = None
     """Initial mode state if supported by the Agent
 
     See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)
     """
 
-    config_options: Sequence[SessionConfigOption] | None = None
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption] | None]] = None
     """**Configuration options for this session."""
 
     session_id: str
@@ -72,20 +73,20 @@ class NewSessionResponse(Response):
 class LoadSessionResponse(Response):
     """Response from loading an existing session."""
 
-    modes: SessionModeState | None = None
+    modes: DefaultOnError[SessionModeState | None] = None
     """Initial mode state if supported by the Agent
 
     See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)
     """
 
-    config_options: Sequence[SessionConfigOption] | None = None
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption] | None]] = None
     """The full list of config options with updated values."""
 
 
 class ForkSessionResponse(Response):
     """**UNSTABLE**: Response from forking an existing session."""
 
-    modes: SessionModeState | None = None
+    modes: DefaultOnError[SessionModeState | None] = None
     """Initial mode state if supported by the Agent
 
     See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)
@@ -94,7 +95,7 @@ class ForkSessionResponse(Response):
     session_id: str
     """Unique identifier for the newly created forked session."""
 
-    config_options: Sequence[SessionConfigOption] | None = None
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption] | None]] = None
     """The full list of config options with updated values."""
 
     @classmethod
@@ -116,13 +117,13 @@ class ForkSessionResponse(Response):
 class ResumeSessionResponse(Response):
     """Response from resuming an existing session."""
 
-    modes: SessionModeState | None = None
+    modes: DefaultOnError[SessionModeState | None] = None
     """Initial mode state if supported by the Agent
 
     See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)
     """
 
-    config_options: Sequence[SessionConfigOption] | None = None
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption] | None]] = None
     """The full list of config options with updated values."""
 
     @classmethod
@@ -143,7 +144,7 @@ class SetSessionModeResponse(Response):
 class SetSessionConfigOptionResponse(Response):
     """Response to `session/set_config_option` method."""
 
-    config_options: Sequence[SessionConfigOption] = []
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption]]] = []  # noqa: RUF012
     """The full list of config options with updated values."""
 
 
@@ -156,7 +157,7 @@ class PromptResponse(Response):
     stop_reason: StopReason
     """Indicates why the agent stopped processing the turn."""
 
-    usage: Usage | None = None
+    usage: DefaultOnError[Usage | None] = None
     """**UNSTABLE**: Token usage for this turn (optional)."""
 
 
@@ -186,10 +187,10 @@ class SessionStatusResponse(Response):
 class SessionOptionsResponse(Response):
     """**UNSTABLE**: The modes and config options a session would start with."""
 
-    modes: SessionModeState | None = None
+    modes: DefaultOnError[SessionModeState | None] = None
     """The mode state the session would start with, if the Agent supports modes."""
 
-    config_options: Sequence[SessionConfigOption] | None = None
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption] | None]] = None
     """The config options the session would start with."""
 
 
@@ -214,7 +215,7 @@ class AuthStatusResponse(Response):
     state: AuthState
     """Whether the agent can start sessions without the user signing in first."""
 
-    accounts: Sequence[AuthAccount] = Field(default_factory=list)
+    accounts: DefaultOnError[SkipInvalidItems[Sequence[AuthAccount]]] = Field(default_factory=list)
     """The accounts the agent has configured, for display."""
 
 
@@ -226,16 +227,20 @@ class InitializeResponse(Response):
     See protocol docs: [Initialization](https://agentclientprotocol.com/protocol/initialization)
     """
 
-    agent_capabilities: AgentCapabilities | None = Field(default_factory=AgentCapabilities)
+    agent_capabilities: DefaultOnError[AgentCapabilities | None] = Field(
+        default_factory=AgentCapabilities
+    )
     """Capabilities supported by the agent."""
 
-    agent_info: Implementation | None = None
+    agent_info: DefaultOnError[Implementation | None] = None
     """Information about the Agent name and version sent to the Client.
 
 
     Note: in future versions of the protocol, this will be required."""
 
-    auth_methods: Sequence[AuthMethod] | None = Field(default_factory=list)
+    auth_methods: DefaultOnError[SkipInvalidItems[Sequence[AuthMethod] | None]] = Field(
+        default_factory=list
+    )
     """Authentication methods supported by the agent."""
 
     protocol_version: int = Field(ge=0, le=65535)
@@ -303,11 +308,11 @@ class InitializeResponse(Response):
 class ListSessionsResponse(Response):
     """Response from listing sessions."""
 
-    next_cursor: str | None = None
+    next_cursor: DefaultOnError[str | None] = None
     """Opaque cursor token. If present, pass this in the next request's cursor parameter
     to fetch the next page. If absent, there are no more results."""
 
-    sessions: Sequence[SessionInfo] = Field(default_factory=list)
+    sessions: DefaultOnError[SkipInvalidItems[Sequence[SessionInfo]]] = Field(default_factory=list)
     """Array of session information objects."""
 
 

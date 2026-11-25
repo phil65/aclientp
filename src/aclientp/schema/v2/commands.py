@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.common import AbsolutePath  # noqa: TC001
 
@@ -44,7 +45,7 @@ class Command(AnnotatedObject):
     description: str
     """What the command does. May contain Markdown."""
 
-    input: AvailableCommandInput | MISSING | None = MISSING
+    input: DefaultOnError[AvailableCommandInput | MISSING | None] = MISSING
     """The command's input; omitted means it takes none."""
 
 
@@ -62,7 +63,7 @@ class Skill(AnnotatedObject):
     description: str
     """What the skill does, shown to users. May contain Markdown."""
 
-    path: AbsolutePath | MISSING | None = MISSING
+    path: DefaultOnError[AbsolutePath | MISSING | None] = MISSING
     """Absolute path of the file defining the skill (normally its ``SKILL.md``) on the
     agent's machine."""
 

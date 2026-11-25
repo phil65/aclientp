@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.common import (  # noqa: TC001
     AbsolutePath,
@@ -57,10 +58,10 @@ DiffPatchFormat = Literal["git_patch"] | str
 
 
 class _DiffChangeBase(AnnotatedObject):
-    file_type: DiffFileType | MISSING | None = MISSING
+    file_type: DefaultOnError[DiffFileType | MISSING | None] = MISSING
     """Kind of file content after the operation (for ``delete``: of the deleted file)."""
 
-    mime_type: MediaType | MISSING | None = MISSING
+    mime_type: DefaultOnError[MediaType | MISSING | None] = MISSING
     """MIME type of the contents after the operation (for ``delete``: of the deleted file)."""
 
 
@@ -159,10 +160,10 @@ class Diff(AnnotatedObject):
 
     type: Literal["diff"] = Field(default="diff", init=False)
 
-    changes: Sequence[DiffChange] = Field(min_length=1)
+    changes: SkipInvalidItems[Sequence[DiffChange]] = Field(min_length=1)
     """The structured file changes; at least one."""
 
-    patch: DiffPatch | MISSING | None = MISSING
+    patch: DefaultOnError[DiffPatch | MISSING | None] = MISSING
     """Renderable patch text; agents SHOULD provide it whenever feasible."""
 
 
@@ -214,7 +215,7 @@ class ToolCallLocation(AnnotatedObject):
     path: AbsolutePath
     """The absolute file path."""
 
-    line: int | MISSING | None = Field(default=MISSING, ge=1)
+    line: DefaultOnError[int | MISSING | None] = Field(default=MISSING, ge=1)
     """1-based line number in the file; ``0`` is invalid."""
 
 
@@ -232,7 +233,7 @@ class ToolCallCapabilities(AnnotatedObject):
     unchanged, ``null`` clears it and an object replaces it as a whole.
     """
 
-    cancel: ToolCallCancelCapabilities | MISSING | None = MISSING
+    cancel: DefaultOnError[ToolCallCancelCapabilities | MISSING | None] = MISSING
     """Permits ``tool_call/cancel`` for this tool call. Omitted and ``None`` mean
     unsupported, an object (also ``{}``) means supported."""
 
@@ -247,31 +248,33 @@ class ToolCallUpdate(AnnotatedObject):
     tool_call_id: ToolCallId
     """Unique identifier of the tool call in the session."""
 
-    name: str | MISSING | None = MISSING
+    name: DefaultOnError[str | MISSING | None] = MISSING
     """Programmatic name of the tool."""
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable title of what the tool is doing."""
 
-    kind: ToolKind | MISSING | None = MISSING
+    kind: DefaultOnError[ToolKind | MISSING | None] = MISSING
     """Category of the tool."""
 
-    status: ToolCallStatus | MISSING | None = MISSING
+    status: DefaultOnError[ToolCallStatus | MISSING | None] = MISSING
     """Execution status; ``None`` resets it to ``pending``."""
 
-    content: Sequence[ToolCallContent] | MISSING | None = MISSING
+    content: DefaultOnError[SkipInvalidItems[Sequence[ToolCallContent] | MISSING | None]] = MISSING
     """Content produced by the tool call; replaces earlier content."""
 
-    locations: Sequence[ToolCallLocation] | MISSING | None = MISSING
+    locations: DefaultOnError[SkipInvalidItems[Sequence[ToolCallLocation] | MISSING | None]] = (
+        MISSING
+    )
     """File locations affected by the tool call."""
 
-    raw_input: Any | MISSING = MISSING
+    raw_input: DefaultOnError[Any | MISSING] = MISSING
     """Raw input parameters of the tool."""
 
-    raw_output: Any | MISSING = MISSING
+    raw_output: DefaultOnError[Any | MISSING] = MISSING
     """Raw output of the tool."""
 
-    capabilities: ToolCallCapabilities | MISSING | None = MISSING
+    capabilities: DefaultOnError[ToolCallCapabilities | MISSING | None] = MISSING
     """Controls the tool call currently supports, such as cancellation."""
 
 

@@ -12,6 +12,7 @@ from typing import Annotated, Any, Literal, Self
 from pydantic import Discriminator, Field, Tag
 
 from aclientp.schema.base import AnnotatedObject, Request, Response
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 
 
 # --- String format ---
@@ -41,7 +42,7 @@ class EnumOption(AnnotatedObject):
     title: str
     """Human-readable title for this option."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Human-readable description."""
 
 
@@ -57,10 +58,10 @@ class StringPropertySchema(AnnotatedObject):
     type: Literal["string"] = "string"
     """Type discriminator."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Optional title for the property."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Human-readable description."""
 
     min_length: int | None = Field(default=None, ge=0)
@@ -75,7 +76,7 @@ class StringPropertySchema(AnnotatedObject):
     format: StringFormatLiteral | None = None
     """String format."""
 
-    default: str | None = None
+    default: DefaultOnError[str | None] = None
     """Default value."""
 
     enum: Sequence[str] | None = None
@@ -91,10 +92,10 @@ class NumberPropertySchema(AnnotatedObject):
     type: Literal["number"] = "number"
     """Type discriminator."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Optional title for the property."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Human-readable description."""
 
     minimum: float | None = None
@@ -103,7 +104,7 @@ class NumberPropertySchema(AnnotatedObject):
     maximum: float | None = None
     """Maximum value (inclusive)."""
 
-    default: float | None = None
+    default: DefaultOnError[float | None] = None
     """Default value."""
 
 
@@ -113,10 +114,10 @@ class IntegerPropertySchema(AnnotatedObject):
     type: Literal["integer"] = "integer"
     """Type discriminator."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Optional title for the property."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Human-readable description."""
 
     minimum: int | None = None
@@ -125,7 +126,7 @@ class IntegerPropertySchema(AnnotatedObject):
     maximum: int | None = None
     """Maximum value (inclusive)."""
 
-    default: int | None = None
+    default: DefaultOnError[int | None] = None
     """Default value."""
 
 
@@ -135,13 +136,13 @@ class BooleanPropertySchema(AnnotatedObject):
     type: Literal["boolean"] = "boolean"
     """Type discriminator."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Optional title for the property."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Human-readable description."""
 
-    default: bool | None = None
+    default: DefaultOnError[bool | None] = None
     """Default value."""
 
 
@@ -189,10 +190,10 @@ class MultiSelectPropertySchema(AnnotatedObject):
     type: Literal["array"] = "array"
     """Type discriminator."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Optional title for the property."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Human-readable description."""
 
     min_items: int | None = Field(default=None, ge=0)
@@ -204,7 +205,7 @@ class MultiSelectPropertySchema(AnnotatedObject):
     items: MultiSelectItems
     """The items definition describing allowed values."""
 
-    default: Sequence[str] | None = None
+    default: DefaultOnError[SkipInvalidItems[Sequence[str] | None]] = None
     """Default selected values."""
 
 
@@ -241,13 +242,13 @@ class ElicitationSchema(AnnotatedObject):
     as required by the elicitation specification.
     """
 
-    type: Literal["object"] = "object"
+    type: DefaultOnError[Literal["object"]] = "object"
     """Type discriminator. Always ``"object"``."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Optional title for the schema."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Optional description of what this schema represents."""
 
     properties: dict[str, ElicitationPropertySchema] = Field(default_factory=dict)
@@ -277,10 +278,10 @@ class ElicitationUrlCapabilities(AnnotatedObject):
 class ElicitationCapabilities(AnnotatedObject):
     """Elicitation capabilities supported by the client."""
 
-    form: ElicitationFormCapabilities | None = None
+    form: DefaultOnError[ElicitationFormCapabilities | None] = None
     """Whether the client supports form-based elicitation."""
 
-    url: ElicitationUrlCapabilities | None = None
+    url: DefaultOnError[ElicitationUrlCapabilities | None] = None
     """Whether the client supports URL-based elicitation."""
 
 
@@ -325,7 +326,7 @@ class ElicitationRequest(Request):
     session_id: str | None = None
     """Session scope: the session this elicitation is tied to."""
 
-    tool_call_id: str | None = None
+    tool_call_id: DefaultOnError[str | None] = None
     """Session scope: optional tool call within the session."""
 
     request_id: int | str | None = None

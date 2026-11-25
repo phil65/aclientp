@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence  # noqa: TC003
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BeforeValidator, Field, model_validator
 
-from aclientp.schema.base import AnnotatedObject, Request, null_as_empty
+from aclientp.schema.base import AnnotatedObject, Request
 from aclientp.schema.capabilities import (
     AuthCapabilities,
     ClientCapabilities,
@@ -20,6 +20,11 @@ from aclientp.schema.capabilities import (
 from aclientp.schema.common import Implementation
 from aclientp.schema.config_options import InitialSessionConfigOption  # noqa: TC001
 from aclientp.schema.content_blocks import ContentBlock  # noqa: TC001
+from aclientp.schema.lenient import (
+    DefaultOnError,
+    DefaultOnNull,
+    coerce_protocol_version,
+)
 from aclientp.schema.mcp import McpServer, MessageMcpRequest
 from aclientp.schema.providers import (
     DisableProviderRequest,
@@ -57,13 +62,13 @@ class SessionSetupRequest(Request):
     cwd: str
     """The working directory for this session. Must be an absolute path."""
 
-    additional_directories: Sequence[str] = Field(default_factory=list)
+    additional_directories: DefaultOnNull[Sequence[str]] = Field(default_factory=list)
     """Additional workspace roots for this session. Each path must be absolute.
 
     Requires the ``session_capabilities.additional_directories`` capability.
     """
 
-    mcp_servers: Sequence[McpServer] = Field(default_factory=list)
+    mcp_servers: DefaultOnNull[Sequence[McpServer]] = Field(default_factory=list)
     """List of MCP (Model Context Protocol) servers the agent should connect to."""
 
     system_prompt: SystemPrompt | None = None
@@ -72,13 +77,13 @@ class SessionSetupRequest(Request):
     Requires the ``session_capabilities.system_prompt`` capability.
     """
 
-    config_options: Sequence[InitialSessionConfigOption] = Field(default_factory=list)
+    config_options: DefaultOnNull[Sequence[InitialSessionConfigOption]] = Field(
+        default_factory=list
+    )
     """**UNSTABLE**: Config option values to apply when the session is set up.
 
     Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
     """
-
-    _config_options_null = field_validator("config_options", mode="before")(null_as_empty)
 
 
 class CustomRequest(Request):
@@ -208,15 +213,11 @@ class SessionOptionsRequest(Request):
     cwd: str
     """The working directory to resolve options for. Must be an absolute path."""
 
-    additional_directories: Sequence[str] = Field(default_factory=list)
+    additional_directories: DefaultOnNull[Sequence[str]] = Field(default_factory=list)
     """Additional workspace roots to resolve options for. Each path must be absolute.
 
     Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
     """
-
-    _additional_directories_null = field_validator("additional_directories", mode="before")(
-        null_as_empty
-    )
 
     session_id: str | None = None
     """The session to resolve options for."""
@@ -312,17 +313,22 @@ class InitializeRequest(Request):
     See protocol docs: [Initialization](https://agentclientprotocol.com/protocol/initialization)
     """
 
-    client_capabilities: ClientCapabilities | None = Field(default_factory=ClientCapabilities)
+    client_capabilities: DefaultOnError[ClientCapabilities | None] = Field(
+        default_factory=ClientCapabilities
+    )
     """Capabilities supported by the client."""
 
-    client_info: Implementation | None = None
+    client_info: DefaultOnError[Implementation | None] = None
     """Information about the Client name and version sent to the Agent.
 
     Note: in future versions of the protocol, this will be required.
     """
 
-    protocol_version: int
-    """The latest protocol version supported by the client."""
+    protocol_version: Annotated[int, BeforeValidator(coerce_protocol_version)]
+    """The latest protocol version supported by the client.
+
+    Strings that are no integer (older Zed builds sent MCP-style dates) read as 0.
+    """
 
     @classmethod
     def create(

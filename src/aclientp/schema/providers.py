@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import Field
 
 from aclientp.schema.base import AnnotatedObject, Request, Response
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 
 
 ProviderId = str
@@ -37,7 +38,7 @@ class ProviderInfo(AnnotatedObject):
     provider_id: ProviderId
     """Provider identifier."""
 
-    supported: Sequence[LlmProtocol]
+    supported: DefaultOnError[SkipInvalidItems[Sequence[LlmProtocol]]]
     """Supported protocol types for this provider."""
 
     required: bool

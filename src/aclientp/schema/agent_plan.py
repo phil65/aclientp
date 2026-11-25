@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from aclientp.schema.base import AnnotatedObject
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 
 
 PlanEntryPriority = Literal["high", "medium", "low"]
@@ -45,7 +46,7 @@ class PlanItems(AnnotatedObject):
     plan_id: PlanId
     """The plan ID to update."""
 
-    entries: Sequence[PlanEntry]
+    entries: DefaultOnError[SkipInvalidItems[Sequence[PlanEntry]]]
     """The complete list of tasks to be accomplished."""
 
 
@@ -60,7 +61,7 @@ class PlanMarkdown(AnnotatedObject):
     content: str
     """The complete plan as Markdown, not just the text that changed."""
 
-    path: str | None = None
+    path: DefaultOnError[str | None] = None
     """The absolute path of the file that holds this plan. Omitted and ``None`` mean the
     plan has no file; ``content`` is displayed either way."""
 

@@ -7,6 +7,7 @@ from pydantic import Field
 from aclientp.schema.base import Request
 from aclientp.schema.common import EnvVariable  # noqa: TC001
 from aclientp.schema.elicitation import ElicitationRequest
+from aclientp.schema.lenient import DefaultOnNull  # noqa: TC001
 from aclientp.schema.mcp import MessageMcpRequest
 from aclientp.schema.tool_call import PermissionOption, ToolCallUpdate  # noqa: TC001
 
@@ -64,7 +65,7 @@ class WaitForTerminalExitRequest(BaseAgentRequest):
 class CreateTerminalRequest(BaseAgentRequest):
     """Request to create a new terminal and execute a command."""
 
-    args: Sequence[str] | None = None
+    args: DefaultOnNull[Sequence[str] | None] = None
     """Array of command arguments."""
 
     command: str
@@ -73,7 +74,7 @@ class CreateTerminalRequest(BaseAgentRequest):
     cwd: str | None = None
     """Working directory for the command (absolute path)."""
 
-    env: Sequence[EnvVariable] | None = None
+    env: DefaultOnNull[Sequence[EnvVariable] | None] = None
     """Environment variables for the command."""
 
     output_byte_limit: int | None = Field(default=None, ge=0)

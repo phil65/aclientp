@@ -21,6 +21,7 @@ from aclientp.schema.content_blocks import (
     TextContentBlock,
     TextResourceContents,
 )
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 
 
 if TYPE_CHECKING:
@@ -46,28 +47,28 @@ PermissionKind = Literal["allow_once", "allow_always", "reject_once", "reject_al
 class ToolCallUpdate(AnnotatedObject):
     """Details about the tool call requiring permission."""
 
-    content: Sequence[ToolCallContent] | None = None
+    content: DefaultOnError[SkipInvalidItems[Sequence[ToolCallContent] | None]] = None
     """Replace the content collection."""
 
-    kind: ToolCallKind | None = None
+    kind: DefaultOnError[ToolCallKind | None] = None
     """Update the tool kind."""
 
-    locations: Sequence[ToolCallLocation] | None = None
+    locations: DefaultOnError[SkipInvalidItems[Sequence[ToolCallLocation] | None]] = None
     """Replace the locations collection."""
 
-    raw_input: Any | None = None
+    raw_input: DefaultOnError[Any | None] = None
     """Update the raw input."""
 
-    raw_output: Any | None = None
+    raw_output: DefaultOnError[Any | None] = None
     """Update the raw output."""
 
-    status: ToolCallStatus | None = None
+    status: DefaultOnError[ToolCallStatus | None] = None
     """Update the execution status."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Update the human-readable title."""
 
-    name: str | None = None
+    name: DefaultOnError[str | None] = None
     """Programmatic name of the tool being invoked."""
 
     tool_call_id: str
@@ -83,7 +84,7 @@ class FileEditToolCallContent(AnnotatedObject):
     new_text: str
     """The new content after modification."""
 
-    old_text: str | None = None
+    old_text: DefaultOnError[str | None] = None
     """The original content (None for new files)."""
 
     path: str
@@ -306,7 +307,7 @@ class ToolCallLocation(AnnotatedObject):
     See protocol docs: [Following the Agent](https://agentclientprotocol.com/protocol/tool-calls#following-the-agent)
     """
 
-    line: int | None = Field(default=0, ge=0)
+    line: DefaultOnError[int | None] = Field(default=0, ge=0)
     """Optional 1-based line number within the file.
 
     Defaults to 0 (unspecified) rather than None: some clients only render

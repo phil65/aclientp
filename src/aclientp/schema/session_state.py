@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import Field
 
 from aclientp.schema.base import AnnotatedObject
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 
 
 class SessionMode(AnnotatedObject):
@@ -16,7 +17,7 @@ class SessionMode(AnnotatedObject):
     See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)
     """
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Optional description of the mode."""
 
     id: str
@@ -29,7 +30,7 @@ class SessionMode(AnnotatedObject):
 class SessionModeState(AnnotatedObject):
     """The set of modes and the one currently active."""
 
-    available_modes: Sequence[SessionMode]
+    available_modes: DefaultOnError[SkipInvalidItems[Sequence[SessionMode]]]
     """The set of modes that the Agent can operate in."""
 
     current_mode_id: str
@@ -42,19 +43,21 @@ class SessionInfo(AnnotatedObject):
     cwd: str
     """The working directory for this session. Must be an absolute path."""
 
-    additional_directories: Sequence[str] = Field(default_factory=list)
+    additional_directories: DefaultOnError[SkipInvalidItems[Sequence[str]]] = Field(
+        default_factory=list
+    )
     """Additional workspace roots reported for this session. Each path must be absolute."""
 
     session_id: str
     """Unique identifier for the session."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Human-readable title for the session."""
 
-    updated_at: str | None = None
+    updated_at: DefaultOnError[str | None] = None
     """ISO 8601 timestamp of last activity."""
 
-    archived: bool | None = None
+    archived: DefaultOnError[bool | None] = None
     """**UNSTABLE**: Whether the session is archived."""
 
 

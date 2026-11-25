@@ -15,6 +15,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Discriminator, Field, Tag
 
 from aclientp.schema.base import AnnotatedObject
+from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 
 
 CursorId = str
@@ -140,5 +141,5 @@ class CursorForkCapabilities(AnnotatedObject):
 class CursorCapabilities(AnnotatedObject):
     """**UNSTABLE**: The methods that currently accept a cursor."""
 
-    fork: CursorForkCapabilities | None = None
+    fork: DefaultOnError[CursorForkCapabilities | None] = None
     """``session/fork`` accepts this cursor. ``None`` means unsupported."""

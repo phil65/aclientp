@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any, TypeIs
 from pydantic import MISSING, BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel, to_snake
 
+from aclientp.schema.lenient import DefaultOnError
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -40,22 +42,13 @@ class Schema(BaseModel):
 class AnnotatedObject(Schema):
     """A v2 object with the ``_meta`` extension point."""
 
-    field_meta: dict[str, Any] | MISSING | None = MISSING
+    field_meta: DefaultOnError[dict[str, Any] | MISSING | None] = MISSING
     """Extension point for implementations. Omitted and ``null`` mean no metadata.
 
     On upserts, ``_meta`` is a patch: omitted leaves it unchanged, ``null`` clears it,
     and an object patches the stored metadata by top-level key (a key set to ``null``
     is removed, any other value replaces that key).
     """
-
-
-def null_as_empty(value: Any) -> Any:
-    """``mode="before"`` validator: read ``null`` as an empty list.
-
-    For list fields where upstream defines omitted, ``null`` and ``[]`` as equivalent
-    (e.g. the initial ``configOptions`` of session setup), keeping the field's type.
-    """
-    return [] if value is None else value
 
 
 type JsonValue = dict[str, JsonValue] | list[JsonValue] | str | int | float | bool | None

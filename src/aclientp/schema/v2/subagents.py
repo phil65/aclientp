@@ -11,6 +11,7 @@ from typing import Literal
 
 from pydantic import MISSING, Field
 
+from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 from aclientp.schema.v2.base import AnnotatedObject
 from aclientp.schema.v2.common import AbsolutePath, SessionId  # noqa: TC001
 from aclientp.schema.v2.prompt import StateUpdate  # noqa: TC001
@@ -26,7 +27,7 @@ class SubagentSessionCapabilities(AnnotatedObject):
     Each mutation needs an explicit per-child capability.
     """
 
-    cancel: SessionCancelCapabilities | MISSING | None = MISSING
+    cancel: DefaultOnError[SessionCancelCapabilities | MISSING | None] = MISSING
     """Permits cancelling the child's current work."""
 
 
@@ -42,16 +43,16 @@ class SubagentUpdate(AnnotatedObject):
     session_id: SessionId
     """The opaque ID of the child session in all ACP messages."""
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """The parent's display title for the child; need not be unique."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """The parent's description of the child's role or purpose. May contain Markdown."""
 
-    capabilities: SubagentSessionCapabilities | MISSING | None = MISSING
+    capabilities: DefaultOnError[SubagentSessionCapabilities | MISSING | None] = MISSING
     """Client-initiated mutations permitted for the child."""
 
-    state: StateUpdate | MISSING | None = MISSING
+    state: DefaultOnError[StateUpdate | MISSING | None] = MISSING
     """The child's current foreground state, mirrored onto the association."""
 
     cwd: AbsolutePath | MISSING | None = MISSING

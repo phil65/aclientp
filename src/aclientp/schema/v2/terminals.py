@@ -14,6 +14,7 @@ from typing import Literal, Self
 
 from pydantic import MISSING, Field
 
+from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 from aclientp.schema.v2.base import AnnotatedObject
 from aclientp.schema.v2.common import AbsolutePath, SessionId, TerminalId  # noqa: TC001
 
@@ -50,10 +51,10 @@ class TerminalExitStatus(AnnotatedObject):
     Its presence marks the terminal as exited, even when neither code nor signal is known.
     """
 
-    exit_code: int | MISSING | None = MISSING
+    exit_code: DefaultOnError[int | MISSING | None] = MISSING
     """Process exit code as the platform reports it; negative values are allowed."""
 
-    signal: str | MISSING | None = MISSING
+    signal: DefaultOnError[str | MISSING | None] = MISSING
     """Signal that terminated the process, when known."""
 
 
@@ -64,7 +65,7 @@ class TerminalCancelCapabilities(AnnotatedObject):
 class TerminalCapabilities(AnnotatedObject):
     """Client-initiated controls a terminal currently supports."""
 
-    cancel: TerminalCancelCapabilities | MISSING | None = MISSING
+    cancel: DefaultOnError[TerminalCancelCapabilities | MISSING | None] = MISSING
     """Permits the Client to cancel this terminal with ``terminal/cancel``."""
 
 
@@ -80,22 +81,22 @@ class TerminalUpdate(AnnotatedObject):
     terminal_id: TerminalId
     """Unique identifier for this terminal within the session."""
 
-    command: str | MISSING | None = MISSING
+    command: DefaultOnError[str | MISSING | None] = MISSING
     """The command being run."""
 
-    cwd: AbsolutePath | MISSING | None = MISSING
+    cwd: DefaultOnError[AbsolutePath | MISSING | None] = MISSING
     """The absolute working directory of the command."""
 
-    output: TerminalOutput | MISSING | None = MISSING
+    output: DefaultOnError[TerminalOutput | MISSING | None] = MISSING
     """An authoritative replacement snapshot of terminal output bytes."""
 
-    exit_status: TerminalExitStatus | MISSING | None = MISSING
+    exit_status: DefaultOnError[TerminalExitStatus | MISSING | None] = MISSING
     """Exit information. A concrete object marks the terminal as exited."""
 
-    size: TerminalSize | MISSING | None = MISSING
+    size: DefaultOnError[TerminalSize | MISSING | None] = MISSING
     """The terminal size the command runs with, when known."""
 
-    capabilities: TerminalCapabilities | MISSING | None = MISSING
+    capabilities: DefaultOnError[TerminalCapabilities | MISSING | None] = MISSING
     """Client-initiated controls this terminal currently supports, such as cancellation."""
 
 

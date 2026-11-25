@@ -8,6 +8,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Discriminator, Field, Tag
 
 from aclientp.schema.base import AnnotatedObject, Schema
+from aclientp.schema.lenient import DefaultOnError, DefaultOnNull
 
 
 class EnvVariable(AnnotatedObject):
@@ -31,7 +32,7 @@ class Implementation(AnnotatedObject):
 
     Can be used as a display name fallback if title isn't present."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Intended for UI and end-user contexts.
 
     Optimized to be human-readable and easily understood.
@@ -60,7 +61,7 @@ class AuthMethodAgent(AnnotatedObject):
     name: str
     """Human-readable name of the authentication method."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Optional description providing more details about this authentication method."""
 
 
@@ -80,13 +81,13 @@ class AuthMethodTerminal(AnnotatedObject):
     name: str
     """Human-readable name of the authentication method."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Optional description providing more details about this authentication method."""
 
-    args: Sequence[str] = ()
+    args: DefaultOnNull[Sequence[str]] = ()
     """Additional arguments to pass when running the agent binary for terminal auth."""
 
-    env: dict[str, str] = Field(default_factory=dict)
+    env: DefaultOnNull[dict[str, str]] = Field(default_factory=dict)
     """Additional environment variables to set when running the agent binary for terminal auth."""
 
 
@@ -122,7 +123,7 @@ class Error(Schema):
     This must be an integer as defined in the JSON-RPC specification.
     """
 
-    data: Any | None = None
+    data: DefaultOnError[Any | None] = None
     """Optional primitive or structured value that contains additional errorinformation.
 
     This may include debugging information or context-specific details.
@@ -161,17 +162,17 @@ class AuthAccount(AnnotatedObject):
     label: str
     """Human-readable name for the account, e.g. ``Claude Max`` or ``OpenAI API key``."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Short text shown with the label, e.g. the credential source. MUST NOT contain secrets."""
 
-    active: bool | None = None
+    active: DefaultOnError[bool | None] = None
     """Whether the agent currently uses this account by default."""
 
-    name: str | None = None
+    name: DefaultOnError[str | None] = None
     """Display name of the user."""
 
-    email: str | None = None
+    email: DefaultOnError[str | None] = None
     """Email address of the user."""
 
-    organization: str | None = None
+    organization: DefaultOnError[str | None] = None
     """Display name of the organization, team, or workspace the account is using."""

@@ -9,6 +9,7 @@ from typing import Annotated, Literal, Self
 from pydantic import Field
 
 from aclientp.schema.base import AnnotatedObject
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 
 
 Audience = Sequence[Literal["assistant", "user"]]
@@ -17,7 +18,7 @@ Audience = Sequence[Literal["assistant", "user"]]
 class BaseResourceContents(AnnotatedObject):
     """Text-based resource contents."""
 
-    mime_type: str | None = None
+    mime_type: DefaultOnError[str | None] = None
     """MIME type of the resource."""
 
     uri: str
@@ -44,13 +45,13 @@ class Annotations(AnnotatedObject):
     The client can use annotations to inform how objects are used or displayed.
     """
 
-    audience: Audience | None = None
+    audience: DefaultOnError[SkipInvalidItems[Audience | None]] = None
     """Audience for the annotated resource."""
 
-    last_modified: str | None = None
+    last_modified: DefaultOnError[str | None] = None
     """Last modified timestamp of the annotated resource."""
 
-    priority: float | None = None
+    priority: DefaultOnError[float | None] = None
     """Priority of the annotated resource."""
 
     @classmethod
@@ -71,7 +72,7 @@ class Annotations(AnnotatedObject):
 class BaseContentBlock(AnnotatedObject):
     """Base content block."""
 
-    annotations: Annotations | None = None
+    annotations: DefaultOnError[Annotations | None] = None
     """Annotations for the content block."""
 
 
@@ -121,7 +122,7 @@ class ImageContentBlock(BaseContentBlock):
     mime_type: str
     """MIME type of the image."""
 
-    uri: str | None = None
+    uri: DefaultOnError[str | None] = None
     """URI of the image."""
 
 
@@ -155,19 +156,19 @@ class ResourceContentBlock(BaseContentBlock):
 
     type: Literal["resource_link"] = Field(default="resource_link", init=False)
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Description of the resource."""
 
-    mime_type: str | None = None
+    mime_type: DefaultOnError[str | None] = None
     """MIME type of the resource."""
 
     name: str
     """Name of the resource."""
 
-    size: int | None = Field(default=None, ge=0)
+    size: DefaultOnError[int | None] = Field(default=None, ge=0)
     """Size of the resource in bytes."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Title of the resource."""
 
     uri: str

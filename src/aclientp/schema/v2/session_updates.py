@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.commands import AvailableCommand  # noqa: TC001
 from aclientp.schema.v2.common import CompactionId, Cost, SessionId  # noqa: TC001
@@ -43,7 +44,7 @@ class AvailableCommandsUpdate(AnnotatedObject):
         default="available_commands_update", init=False
     )
 
-    available_commands: Sequence[AvailableCommand]
+    available_commands: SkipInvalidItems[Sequence[AvailableCommand]]
     """All commands the agent can execute."""
 
 
@@ -54,7 +55,7 @@ class ConfigOptionUpdate(AnnotatedObject):
         default="config_option_update", init=False
     )
 
-    config_options: Sequence[SessionConfigOption]
+    config_options: SkipInvalidItems[Sequence[SessionConfigOption]]
     """All config options and their current values."""
 
 
@@ -65,10 +66,10 @@ class SessionInfoUpdate(AnnotatedObject):
         default="session_info_update", init=False
     )
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable title of the session."""
 
-    updated_at: str | MISSING | None = MISSING
+    updated_at: DefaultOnError[str | MISSING | None] = MISSING
     """RFC 3339 timestamp of the last activity."""
 
 
@@ -83,7 +84,7 @@ class UsageUpdate(AnnotatedObject):
     size: int = Field(ge=0)
     """Total context window size in tokens."""
 
-    cost: Cost | MISSING | None = MISSING
+    cost: DefaultOnError[Cost | MISSING | None] = MISSING
     """Cumulative session cost; omitted leaves the last cost unchanged, ``None`` clears it."""
 
 
@@ -105,7 +106,7 @@ class Notice(AnnotatedObject):
     title: str = Field(min_length=1)
     """Plain-text title that can stand alone."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Plain-text detail or guidance."""
 
 
@@ -125,14 +126,14 @@ class CompactionUpdate(AnnotatedObject):
     compaction_id: CompactionId
     """The agent-owned ID of the compaction, unique within the session."""
 
-    status: CompactionStatus | MISSING | None = MISSING
+    status: DefaultOnError[CompactionStatus | MISSING | None] = MISSING
     """Current lifecycle status; omitted leaves it unchanged, ``None`` resets it to
     ``in_progress``. A new compaction starts as ``in_progress``."""
 
-    summary: Sequence[ContentBlock] | MISSING | None = MISSING
+    summary: DefaultOnError[SkipInvalidItems[Sequence[ContentBlock] | MISSING | None]] = MISSING
     """Complete replacement summary content to show the user."""
 
-    error: str | MISSING | None = MISSING
+    error: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable error details."""
 
 
@@ -177,7 +178,7 @@ class PromptSuggestionsUpdate(AnnotatedObject):
         default="prompt_suggestions_update", init=False
     )
 
-    suggestions: Sequence[PromptSuggestion]
+    suggestions: SkipInvalidItems[Sequence[PromptSuggestion]]
     """Suggestions, most likely first; an empty list withdraws all."""
 
 

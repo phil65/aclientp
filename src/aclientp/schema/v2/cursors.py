@@ -11,6 +11,7 @@ from typing import Annotated, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.common import CompactionId, CursorId, MessageId, ToolCallId  # noqa: TC001
 
@@ -121,7 +122,7 @@ class CursorForkCapabilities(AnnotatedObject):
 class CursorCapabilities(AnnotatedObject):
     """**UNSTABLE**: The methods that currently accept a cursor."""
 
-    fork: CursorForkCapabilities | MISSING | None = MISSING
+    fork: DefaultOnError[CursorForkCapabilities | MISSING | None] = MISSING
     """``session/fork`` accepts this cursor."""
 
 
@@ -138,7 +139,7 @@ class CursorUpdate(AnnotatedObject):
     cursor_id: CursorId
     """The agent-owned ID of the cursor, unique within the session."""
 
-    capabilities: CursorCapabilities | MISSING | None = MISSING
+    capabilities: DefaultOnError[CursorCapabilities | MISSING | None] = MISSING
     """The methods that currently accept the cursor; a new cursor starts with none."""
 
     anchor: CursorAnchor | MISSING | None = MISSING

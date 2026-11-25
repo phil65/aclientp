@@ -6,6 +6,7 @@ from typing import Any, Self
 
 from aclientp.schema.base import Response
 from aclientp.schema.elicitation import ElicitationResponse
+from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 from aclientp.schema.mcp import MessageMcpResponse
 from aclientp.schema.terminal import TerminalExitStatus  # noqa: TC001
 from aclientp.schema.tool_call import AllowedOutcome, DeniedOutcome, RequestPermissionOutcome
@@ -32,7 +33,7 @@ class ReleaseTerminalResponse(Response):
 class TerminalOutputResponse(Response):
     """Response containing the terminal output and exit status."""
 
-    exit_status: TerminalExitStatus | None = None
+    exit_status: DefaultOnError[TerminalExitStatus | None] = None
     """Exit status if the command has completed."""
 
     output: str
@@ -45,10 +46,10 @@ class TerminalOutputResponse(Response):
 class WaitForTerminalExitResponse(Response):
     """Response containing the exit status of a terminal command."""
 
-    exit_code: int | None = None
+    exit_code: DefaultOnError[int | None] = None
     """The process exit code (may be null if terminated by signal)."""
 
-    signal: str | None = None
+    signal: DefaultOnError[str | None] = None
     """The signal that terminated the process (may be null if exited normally)."""
 
 

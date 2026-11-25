@@ -7,6 +7,7 @@ from typing import Self
 from pydantic import RootModel
 
 from aclientp.schema.base import AnnotatedObject
+from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 
 
 class CommandInputHint(AnnotatedObject):
@@ -29,7 +30,7 @@ class AvailableCommand(AnnotatedObject):
     description: str
     """Human-readable description of what the command does."""
 
-    input: AvailableCommandInput | None = None
+    input: DefaultOnError[AvailableCommandInput | None] = None
     """Input for the command if required."""
 
     name: str

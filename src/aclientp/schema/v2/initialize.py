@@ -6,6 +6,7 @@ from collections.abc import Sequence  # noqa: TC003
 
 from pydantic import MISSING
 
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.auth import AuthMethod  # noqa: TC001
 from aclientp.schema.v2.base import AnnotatedObject
 from aclientp.schema.v2.capabilities import AgentCapabilities, ClientCapabilities  # noqa: TC001
@@ -21,7 +22,7 @@ class InitializeRequest(AnnotatedObject):
     info: Implementation
     """Information about the implementation sending this initialize request."""
 
-    capabilities: ClientCapabilities | MISSING = MISSING
+    capabilities: DefaultOnError[ClientCapabilities | MISSING] = MISSING
     """Capabilities supported by the client."""
 
 
@@ -36,8 +37,8 @@ class InitializeResponse(AnnotatedObject):
     info: Implementation
     """Information about the implementation sending this initialize response."""
 
-    capabilities: AgentCapabilities | MISSING = MISSING
+    capabilities: DefaultOnError[AgentCapabilities | MISSING] = MISSING
     """Capabilities supported by the agent."""
 
-    auth_methods: Sequence[AuthMethod] | MISSING = MISSING
+    auth_methods: DefaultOnError[SkipInvalidItems[Sequence[AuthMethod] | MISSING]] = MISSING
     """Authentication methods supported by the agent."""

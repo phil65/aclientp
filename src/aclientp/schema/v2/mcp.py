@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag, model_validator
 
+from aclientp.schema.lenient import DefaultOnError, DefaultOnNull  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Schema, Unknown, open_discriminator
 from aclientp.schema.v2.common import (  # noqa: TC001
     AbsolutePath,
@@ -30,7 +31,7 @@ class McpServerHttp(AnnotatedObject):
     url: str
     """URL to the MCP server."""
 
-    headers: Sequence[HttpHeader] | MISSING = MISSING
+    headers: DefaultOnNull[Sequence[HttpHeader] | MISSING] = MISSING
     """HTTP headers to set when making requests to the MCP server. Headers the MCP transport
     defines are owned by the transport, and Agents use the transport's values for them."""
 
@@ -46,10 +47,10 @@ class McpServerStdio(AnnotatedObject):
     command: AbsolutePath
     """Absolute path to the MCP server executable."""
 
-    args: Sequence[str] | MISSING = MISSING
+    args: DefaultOnNull[Sequence[str] | MISSING] = MISSING
     """Command-line arguments to pass to the MCP server."""
 
-    env: Sequence[EnvVariable] | MISSING = MISSING
+    env: DefaultOnNull[Sequence[EnvVariable] | MISSING] = MISSING
     """Environment variables to set when launching the MCP server. Names SHOULD be unique.
     Agents MAY reject duplicates with ``-32602``, and otherwise the last entry wins."""
 
@@ -114,7 +115,7 @@ class MessageMcpRequest(AnnotatedObject):
     the session and MUST NOT guess. A provider that needs it MAY reject a request without
     it with ``-32602``."""
 
-    tool_call_id: ToolCallId | MISSING | None = MISSING
+    tool_call_id: DefaultOnError[ToolCallId | MISSING | None] = MISSING
     """The tool call in that session this request is part of. Omitted and ``None`` mean no
     tool call. Requires ``session_id``; providers MUST NOT reject a request for a missing
     or unknown tool call."""

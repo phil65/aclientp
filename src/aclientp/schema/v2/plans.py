@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.common import AbsolutePath, PlanId  # noqa: TC001
 
@@ -39,7 +40,7 @@ class PlanItems(AnnotatedObject):
     plan_id: PlanId
     """The plan to update."""
 
-    entries: Sequence[PlanEntry]
+    entries: SkipInvalidItems[Sequence[PlanEntry]]
     """All tasks of the plan; updates send the complete list, which replaces the old one."""
 
 
@@ -54,7 +55,7 @@ class PlanMarkdown(AnnotatedObject):
     content: str
     """The complete plan as Markdown, not just the text that changed."""
 
-    path: AbsolutePath | MISSING | None = MISSING
+    path: DefaultOnError[AbsolutePath | MISSING | None] = MISSING
     """Absolute path of the file holding the plan."""
 
 

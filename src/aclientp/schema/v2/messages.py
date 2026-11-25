@@ -12,6 +12,7 @@ from typing import Literal
 
 from pydantic import MISSING, Field
 
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.base import AnnotatedObject
 from aclientp.schema.v2.common import MessageId, SessionId  # noqa: TC001
 from aclientp.schema.v2.content import ContentBlock  # noqa: TC001
@@ -51,7 +52,7 @@ class _MessageUpsert(AnnotatedObject):
     message_id: MessageId
     """The message to create or update."""
 
-    content: Sequence[ContentBlock] | MISSING | None = MISSING
+    content: DefaultOnError[SkipInvalidItems[Sequence[ContentBlock] | MISSING | None]] = MISSING
     """Complete replacement content; omitted leaves it unchanged, ``None`` clears it."""
 
 
@@ -85,20 +86,20 @@ class SessionMessage(AnnotatedObject):
     message_id: MessageId
     """Identifier of the message in this session's transcript."""
 
-    sender_session_id: SessionId | MISSING | None = MISSING
+    sender_session_id: DefaultOnError[SessionId | MISSING | None] = MISSING
     """The sending session."""
 
-    recipient_session_id: SessionId | MISSING | None = MISSING
+    recipient_session_id: DefaultOnError[SessionId | MISSING | None] = MISSING
     """The receiving session."""
 
-    sender_message_id: MessageId | MISSING | None = MISSING
+    sender_message_id: DefaultOnError[MessageId | MISSING | None] = MISSING
     """On an incoming view: the ``messageId`` of the outgoing view in the sender's transcript."""
 
-    recipient_message_id: MessageId | MISSING | None = MISSING
+    recipient_message_id: DefaultOnError[MessageId | MISSING | None] = MISSING
     """On an outgoing view: the ``messageId`` of the incoming view in the recipient's
     transcript."""
 
-    content: Sequence[ContentBlock] | MISSING | None = MISSING
+    content: DefaultOnError[SkipInvalidItems[Sequence[ContentBlock] | MISSING | None]] = MISSING
     """Complete replacement content."""
 
 

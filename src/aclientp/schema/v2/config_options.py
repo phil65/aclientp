@@ -11,6 +11,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.common import (  # noqa: TC001
     SessionConfigGroupId,
@@ -39,7 +40,7 @@ class SessionConfigSelectOption(AnnotatedObject):
     name: str
     """Human-readable label."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Description of this value. May contain Markdown."""
 
 
@@ -52,7 +53,9 @@ class SessionConfigSelectGroup(AnnotatedObject):
     name: str
     """Human-readable label."""
 
-    options: Sequence[SessionConfigSelectOption] = Field(min_length=1)
+    options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigSelectOption]]] = Field(
+        min_length=1
+    )
     """The values in this group."""
 
 
@@ -69,10 +72,10 @@ class _ConfigOptionBase(AnnotatedObject):
     name: str
     """Human-readable label."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Description for the Client to show. May contain Markdown."""
 
-    category: SessionConfigOptionCategory | MISSING | None = MISSING
+    category: DefaultOnError[SessionConfigOptionCategory | MISSING | None] = MISSING
     """Semantic category, for UX only."""
 
 
@@ -214,5 +217,5 @@ reject unknown options or values with ``-32602``.
 class SetSessionConfigOptionResponse(AnnotatedObject):
     """Response to ``session/set_config_option``."""
 
-    config_options: Sequence[SessionConfigOption]
+    config_options: SkipInvalidItems[Sequence[SessionConfigOption]]
     """All config options and their current values."""

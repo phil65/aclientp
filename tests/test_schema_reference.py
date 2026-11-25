@@ -8,6 +8,7 @@ from pydantic import MISSING, BaseModel, Field, StringConstraints, model_validat
 import pytest
 from upathtools import UPath
 
+from aclientp.schema.lenient import DefaultOnError
 from aclientp.schema_reference import (
     REFERENCE_ROOT,
     Finding,
@@ -254,6 +255,36 @@ def test_constraint_differences_are_reported() -> None:
 
     variant = "SessionUpdate[sessionUpdate=agent_message_chunk]"
     assert ids == {f"constraint:{variant}.content", f"constraint:{variant}.messageId"}
+
+
+def test_deserialize_annotation_differences_are_reported() -> None:
+    lenient_chunk = {
+        **CHUNK,
+        "properties": {
+            "content": {"type": "string"},
+            "messageId": {"type": "string", "x-deserialize-default-on-error": True},
+        },
+    }
+
+    class Chunk(BaseModel):
+        session_update: Literal["agent_message_chunk"] = Field(
+            default="agent_message_chunk", alias="sessionUpdate"
+        )
+        content: DefaultOnError[str]  # not lenient upstream
+        message_id: str | None = Field(default=None, alias="messageId")  # lacks the marker
+
+    class Marked(Chunk):
+        content: str
+        message_id: DefaultOnError[str | None] = Field(default=None, alias="messageId")
+
+    upstream = UpstreamSchema.parse(
+        _schema(ContentChunk=lenient_chunk, SessionUpdate=UPDATE, ToolKind=KIND), META
+    )
+
+    variant = "SessionUpdate[sessionUpdate=agent_message_chunk]"
+    ids = _ids(check(upstream, _ours(Chunk, OpenKind), {}))
+    assert ids == {f"deserialize:{variant}.content", f"deserialize:{variant}.messageId"}
+    assert check(upstream, _ours(Marked, OpenKind), {}) == []
 
 
 def test_update_reference_moves_only_the_named_pin(tmp_path: Path) -> None:

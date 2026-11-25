@@ -9,6 +9,7 @@ from pydantic import Discriminator, Field, HttpUrl, Tag, model_validator
 
 from aclientp.schema.base import AnnotatedObject, Request, Response, Schema
 from aclientp.schema.common import EnvVariable  # noqa: TC001
+from aclientp.schema.lenient import DefaultOnError, DefaultOnNull  # noqa: TC001
 
 
 class HttpHeader(AnnotatedObject):
@@ -34,7 +35,7 @@ class HttpMcpServer(BaseMcpServer):
     Only available when the Agent capabilities indicate `mcp_capabilities.http` is `true`.
     """
 
-    headers: Sequence[HttpHeader] = Field(default_factory=list)
+    headers: DefaultOnNull[Sequence[HttpHeader]] = Field(default_factory=list)
     """HTTP headers to set when making requests to the MCP server."""
 
     type: Literal["http"] = Field(default="http", init=False)
@@ -53,7 +54,7 @@ class SseMcpServer(BaseMcpServer):
     Only available when the Agent capabilities indicate `mcp_capabilities.sse` is `true`.
     """
 
-    headers: Sequence[HttpHeader]
+    headers: DefaultOnNull[Sequence[HttpHeader]]
     """HTTP headers to set when making requests to the MCP server."""
 
     type: Literal["sse"] = Field(default="sse", init=False)
@@ -72,7 +73,7 @@ class StdioMcpServer(BaseMcpServer):
     All Agents MUST support this transport.
     """
 
-    args: Sequence[str]
+    args: DefaultOnNull[Sequence[str]]
     """Command-line arguments to pass to the MCP server."""
 
     # typ: Literal["stdio"] = Field(default="stdio", init=False)
@@ -81,7 +82,7 @@ class StdioMcpServer(BaseMcpServer):
     command: str
     """Path to the MCP server executable."""
 
-    env: Sequence[EnvVariable]
+    env: DefaultOnNull[Sequence[EnvVariable]]
     """Environment variables to set when launching the MCP server."""
 
     def get_env_dict(self) -> dict[str, str]:
@@ -159,7 +160,7 @@ class MessageMcpRequest(Request):
     """The session whose work caused this request (the child's ID for a child session's
     work). The Agent SHOULD include it when it knows the session and MUST NOT guess."""
 
-    tool_call_id: str | None = None
+    tool_call_id: DefaultOnError[str | None] = None
     """The tool call in that session this request is part of. Requires ``session_id``."""
 
     @model_validator(mode="after")

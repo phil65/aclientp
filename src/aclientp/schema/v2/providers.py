@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import MISSING
 
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.base import AnnotatedObject
 from aclientp.schema.v2.common import ProviderId  # noqa: TC001
 
@@ -31,7 +32,7 @@ class ProviderInfo(AnnotatedObject):
     provider_id: ProviderId
     """Provider identifier, for example "main" or "openai"."""
 
-    supported: Sequence[LlmProtocol]
+    supported: DefaultOnError[SkipInvalidItems[Sequence[LlmProtocol]]]
     """Supported protocol types for this provider."""
 
     required: bool

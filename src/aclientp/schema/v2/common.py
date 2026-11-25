@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import MISSING, Field, StringConstraints
 
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems
 from aclientp.schema.v2.base import AnnotatedObject, Schema
 
 
@@ -147,7 +148,7 @@ class Error(Schema):
     message: str
     """A short, single-sentence description of the error."""
 
-    data: ErrorData | MISSING | None = MISSING
+    data: DefaultOnError[ErrorData | MISSING | None] = MISSING
     """Additional information about the error."""
 
 
@@ -163,13 +164,13 @@ class Icon(AnnotatedObject):
     src: str
     """URI of the icon. MUST be an ``https:`` or ``data:`` URI."""
 
-    mime_type: MediaType | MISSING | None = MISSING
+    mime_type: DefaultOnError[MediaType | MISSING | None] = MISSING
     """MIME type override, if the source's type is missing or generic."""
 
-    sizes: Sequence[str] | MISSING | None = MISSING
+    sizes: DefaultOnError[SkipInvalidItems[Sequence[str] | MISSING | None]] = MISSING
     """Sizes the icon can be used at, each ``WxH`` (e.g. ``48x48``) or ``any``."""
 
-    theme: IconTheme | MISSING | None = MISSING
+    theme: DefaultOnError[IconTheme | MISSING | None] = MISSING
     """Theme the icon is designed for; omitted means not theme-specific."""
 
 
@@ -179,7 +180,7 @@ class Implementation(AnnotatedObject):
     name: str
     """Programmatic name; also the display name if ``title`` is not set."""
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable name for user interfaces."""
 
     version: str
@@ -201,13 +202,13 @@ class Usage(AnnotatedObject):
     output_tokens: int = Field(ge=0)
     """Output tokens."""
 
-    thought_tokens: int | MISSING | None = Field(default=MISSING, ge=0)
+    thought_tokens: DefaultOnError[int | MISSING | None] = Field(default=MISSING, ge=0)
     """Thought/reasoning tokens, if reported."""
 
-    cached_read_tokens: int | MISSING | None = Field(default=MISSING, ge=0)
+    cached_read_tokens: DefaultOnError[int | MISSING | None] = Field(default=MISSING, ge=0)
     """Cache read tokens, if reported."""
 
-    cached_write_tokens: int | MISSING | None = Field(default=MISSING, ge=0)
+    cached_write_tokens: DefaultOnError[int | MISSING | None] = Field(default=MISSING, ge=0)
     """Cache write tokens, if reported."""
 
 
@@ -251,11 +252,11 @@ Role = Literal["assistant", "user"] | str
 class Annotations(AnnotatedObject):
     """Hints for the client on how an object is used or displayed."""
 
-    audience: Sequence[Role] | MISSING | None = MISSING
+    audience: DefaultOnError[SkipInvalidItems[Sequence[Role] | MISSING | None]] = MISSING
     """Intended recipients, such as the user or the assistant."""
 
-    last_modified: str | MISSING | None = MISSING
+    last_modified: DefaultOnError[str | MISSING | None] = MISSING
     """When the underlying resource was last modified (ISO 8601)."""
 
-    priority: float | MISSING | None = Field(default=MISSING, ge=0, le=1)
+    priority: DefaultOnError[float | MISSING | None] = Field(default=MISSING, ge=0, le=1)
     """Importance from 0 (least) to 1 (most important)."""

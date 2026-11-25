@@ -242,6 +242,32 @@ async def test_router_falls_back_to_v1(routed: tuple[RoutedAgentConnection, Peer
     assert conn.v1_side is not None
 
 
+@pytest.mark.parametrize("version", ["2024-11-05", "0.1.0", "1"])
+async def test_router_reads_string_protocol_versions_like_v1(
+    routed: tuple[RoutedAgentConnection, Peer], version: str
+) -> None:
+    conn, peer = routed
+    params = {"protocolVersion": version, "clientCapabilities": {}}
+    await peer.send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": params})
+
+    reply = await peer.receive()
+
+    assert reply["result"]["protocolVersion"] == 1  # v1 answers, the client decides
+    assert conn.protocol_version == 1
+
+
+async def test_router_rejects_non_string_non_integer_versions(
+    routed: tuple[RoutedAgentConnection, Peer],
+) -> None:
+    _, peer = routed
+    params = {"protocolVersion": [1], "clientCapabilities": {}}
+    await peer.send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": params})
+
+    reply = await peer.receive()
+
+    assert reply["error"]["code"] == -32602
+
+
 async def test_router_rejects_requests_before_initialize(
     routed: tuple[RoutedAgentConnection, Peer],
 ) -> None:

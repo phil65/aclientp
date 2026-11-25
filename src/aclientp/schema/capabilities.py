@@ -8,6 +8,7 @@ from pydantic import Field
 
 from aclientp.schema.base import AnnotatedObject
 from aclientp.schema.elicitation import ElicitationCapabilities  # noqa: TC001
+from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 
 
 class FileSystemCapabilities(AnnotatedObject):
@@ -16,10 +17,10 @@ class FileSystemCapabilities(AnnotatedObject):
     See protocol docs: [FileSystem](https://agentclientprotocol.com/protocol/initialization#filesystem)
     """
 
-    read_text_file: bool | None = False
+    read_text_file: DefaultOnError[bool | None] = False
     """Whether the Client supports `fs/read_text_file` requests."""
 
-    write_text_file: bool | None = False
+    write_text_file: DefaultOnError[bool | None] = False
     """Whether the Client supports `fs/write_text_file` requests."""
 
 
@@ -30,7 +31,7 @@ class AuthCapabilities(AnnotatedObject):
     method types the client can handle.
     """
 
-    terminal: bool = False
+    terminal: DefaultOnError[bool] = False
     """Whether the client supports ``terminal`` authentication methods."""
 
 
@@ -60,7 +61,7 @@ class BooleanConfigOptionCapabilities(AnnotatedObject):
 class SessionConfigOptionsCapabilities(AnnotatedObject):
     """Session configuration option capabilities supported by the client."""
 
-    boolean: BooleanConfigOptionCapabilities | None = None
+    boolean: DefaultOnError[BooleanConfigOptionCapabilities | None] = None
     """Whether the client supports boolean session configuration options."""
 
 
@@ -82,32 +83,32 @@ class PromptSuggestionsCapabilities(AnnotatedObject):
     Text and resource link content are always allowed.
     """
 
-    image: PromptSuggestionsImageCapabilities | None = None
+    image: DefaultOnError[PromptSuggestionsImageCapabilities | None] = None
     """Whether prompt suggestions may include ``image`` content blocks."""
 
-    audio: PromptSuggestionsAudioCapabilities | None = None
+    audio: DefaultOnError[PromptSuggestionsAudioCapabilities | None] = None
     """Whether prompt suggestions may include ``audio`` content blocks."""
 
-    embedded_context: PromptSuggestionsEmbeddedContextCapabilities | None = None
+    embedded_context: DefaultOnError[PromptSuggestionsEmbeddedContextCapabilities | None] = None
     """Whether prompt suggestions may include ``resource`` content blocks."""
 
 
 class ClientSessionCapabilities(AnnotatedObject):
     """Session-related capabilities supported by the client."""
 
-    compaction: CompactionCapabilities | None = None
+    compaction: DefaultOnError[CompactionCapabilities | None] = None
     """Support for ID-addressed context compaction updates."""
 
-    config_options: SessionConfigOptionsCapabilities | None = None
+    config_options: DefaultOnError[SessionConfigOptionsCapabilities | None] = None
     """Config option capabilities supported by the client."""
 
-    notices: NoticeCapabilities | None = None
+    notices: DefaultOnError[NoticeCapabilities | None] = None
     """Support for live user-facing ``notice`` session updates."""
 
-    prompt_suggestions: PromptSuggestionsCapabilities | None = None
+    prompt_suggestions: DefaultOnError[PromptSuggestionsCapabilities | None] = None
     """**UNSTABLE**: Support for ``prompt_suggestions_update`` session updates."""
 
-    cursors: SessionCursorsCapabilities | None = None
+    cursors: DefaultOnError[SessionCursorsCapabilities | None] = None
     """**UNSTABLE**: Support for ``cursor_update`` session updates."""
 
 
@@ -128,31 +129,33 @@ class ClientCapabilities(AnnotatedObject):
     See protocol docs: [Client Capabilities](https://agentclientprotocol.com/protocol/initialization#client-capabilities)
     """
 
-    auth: AuthCapabilities | None = Field(default_factory=AuthCapabilities)
+    auth: DefaultOnError[AuthCapabilities | None] = Field(default_factory=AuthCapabilities)
     """Authentication capabilities supported by the client."""
 
-    elicitation: ElicitationCapabilities | None = None
+    elicitation: DefaultOnError[ElicitationCapabilities | None] = None
     """Elicitation capabilities supported by the client.
 
     Determines which elicitation modes the agent may use.
     """
 
-    session: ClientSessionCapabilities | None = None
+    session: DefaultOnError[ClientSessionCapabilities | None] = None
     """Session-related capabilities supported by the client."""
 
-    subagents: SubagentCapabilities | None = None
+    subagents: DefaultOnError[SubagentCapabilities | None] = None
     """Client support for ``subagent_update`` session updates."""
 
-    plan: PlanCapabilities | None = None
+    plan: DefaultOnError[PlanCapabilities | None] = None
     """Client support for ID-addressed plan updates."""
 
-    fs: FileSystemCapabilities | None = Field(default_factory=FileSystemCapabilities)
+    fs: DefaultOnError[FileSystemCapabilities | None] = Field(
+        default_factory=FileSystemCapabilities
+    )
     """File system capabilities supported by the client.
 
     Determines which file operations the agent can request.
     """
 
-    terminal: bool | None = False
+    terminal: DefaultOnError[bool | None] = False
     """Whether the Client support all `terminal/*` methods."""
 
     @classmethod
@@ -193,30 +196,30 @@ class PromptCapabilities(AnnotatedObject):
     See protocol docs: [Prompt Capabilities](https://agentclientprotocol.com/protocol/initialization#prompt-capabilities)
     """
 
-    audio: bool | None = False
+    audio: DefaultOnError[bool | None] = False
     """Agent supports [`ContentBlock::Audio`]."""
 
-    embedded_context: bool | None = False
+    embedded_context: DefaultOnError[bool | None] = False
     """Agent supports embedded context in `session/prompt` requests.
 
     When enabled, the Client is allowed to include [`ContentBlock::Resource`]
     in prompt requests for pieces of context that are referenced in the message.
     """
 
-    image: bool | None = False
+    image: DefaultOnError[bool | None] = False
     """Agent supports [`ContentBlock::Image`]."""
 
 
 class McpCapabilities(AnnotatedObject):
     """MCP capabilities supported by the agent."""
 
-    http: bool | None = False
+    http: DefaultOnError[bool | None] = False
     """Agent supports [`McpServer::Http`]."""
 
-    sse: bool | None = False
+    sse: DefaultOnError[bool | None] = False
     """Agent supports [`McpServer::Sse`]."""
 
-    acp: bool | None = False
+    acp: DefaultOnError[bool | None] = False
     """**UNSTABLE**: Agent supports ``acp`` MCP servers (MCP over ACP via ``mcp/message``)."""
 
 
@@ -242,14 +245,14 @@ class SessionSystemPromptOverrideCapabilities(AnnotatedObject):
 class SessionSystemPromptModeCapabilities(AnnotatedObject):
     """System prompt delivery modes the agent supports in addition to ``append``."""
 
-    override: SessionSystemPromptOverrideCapabilities | None = None
+    override: DefaultOnError[SessionSystemPromptOverrideCapabilities | None] = None
     """Whether the agent supports ``override`` mode."""
 
 
 class SessionSystemPromptCapabilities(AnnotatedObject):
     """Capabilities for client-provided system prompts."""
 
-    mode: SessionSystemPromptModeCapabilities | None = None
+    mode: DefaultOnError[SessionSystemPromptModeCapabilities | None] = None
     """Delivery modes the agent supports in addition to ``append``."""
 
 
@@ -276,7 +279,7 @@ class SessionCancelCapabilities(AnnotatedObject):
 class SubagentSessionCapabilities(AnnotatedObject):
     """Capabilities of a subagent session."""
 
-    cancel: SessionCancelCapabilities | None = None
+    cancel: DefaultOnError[SessionCancelCapabilities | None] = None
     """Permits the client to cancel this child's current work without ending the session."""
 
 
@@ -319,37 +322,37 @@ class SessionCapabilities(AnnotatedObject):
     See protocol docs: [Session Capabilities](https://agentclientprotocol.com/protocol/initialization#session-capabilities)
     """
 
-    list: SessionListCapabilities | None = None
+    list: DefaultOnError[SessionListCapabilities | None] = None
     """Whether the agent supports `session/list`."""
 
-    delete: SessionDeleteCapabilities | None = None
+    delete: DefaultOnError[SessionDeleteCapabilities | None] = None
     """Whether the agent supports ``session/delete``."""
 
-    additional_directories: SessionAdditionalDirectoriesCapabilities | None = None
+    additional_directories: DefaultOnError[SessionAdditionalDirectoriesCapabilities | None] = None
     """Whether the agent supports ``additionalDirectories`` on session lifecycle requests."""
 
-    system_prompt: SessionSystemPromptCapabilities | None = None
+    system_prompt: DefaultOnError[SessionSystemPromptCapabilities | None] = None
     """Whether the agent supports ``systemPrompt`` on session lifecycle requests."""
 
-    resume: SessionResumeCapabilities | None = None
+    resume: DefaultOnError[SessionResumeCapabilities | None] = None
     """Whether the agent supports `session/resume`."""
 
-    close: SessionCloseCapabilities | None = None
+    close: DefaultOnError[SessionCloseCapabilities | None] = None
     """Whether the agent supports `session/close`."""
 
-    fork: SessionForkCapabilities | None = None
+    fork: DefaultOnError[SessionForkCapabilities | None] = None
     """**UNSTABLE**: Whether the agent supports `session/fork`."""
 
-    archive: SessionArchiveCapabilities | None = None
+    archive: DefaultOnError[SessionArchiveCapabilities | None] = None
     """**UNSTABLE**: Whether the agent supports ``session/archive`` and ``session/unarchive``."""
 
-    status: SessionStatusCapabilities | None = None
+    status: DefaultOnError[SessionStatusCapabilities | None] = None
     """**UNSTABLE**: Whether the agent supports ``session/status``."""
 
-    options: SessionOptionsCapabilities | None = None
+    options: DefaultOnError[SessionOptionsCapabilities | None] = None
     """**UNSTABLE**: Whether the agent supports ``session/options``."""
 
-    title: SessionTitleCapabilities | None = None
+    title: DefaultOnError[SessionTitleCapabilities | None] = None
     """**UNSTABLE**: Whether the agent supports ``session/set_title``."""
 
 
@@ -367,10 +370,10 @@ class AuthStatusCapabilities(AnnotatedObject):
 class AgentAuthCapabilities(AnnotatedObject):
     """Authentication-related capabilities supported by the agent."""
 
-    logout: LogoutCapabilities | None = None
+    logout: DefaultOnError[LogoutCapabilities | None] = None
     """Whether the agent supports the logout method."""
 
-    status: AuthStatusCapabilities | None = None
+    status: DefaultOnError[AuthStatusCapabilities | None] = None
     """**UNSTABLE**: Whether the agent supports ``auth/status``."""
 
 
@@ -387,22 +390,30 @@ class AgentCapabilities(AnnotatedObject):
     See protocol docs: [Agent Capabilities](https://agentclientprotocol.com/protocol/initialization#agent-capabilities)
     """
 
-    auth: AgentAuthCapabilities | None = Field(default_factory=AgentAuthCapabilities)
+    auth: DefaultOnError[AgentAuthCapabilities | None] = Field(
+        default_factory=AgentAuthCapabilities
+    )
     """Authentication-related capabilities supported by the agent."""
 
-    providers: ProvidersCapabilities | None = None
+    providers: DefaultOnError[ProvidersCapabilities | None] = None
     """**UNSTABLE**: LLM provider configuration support."""
 
-    load_session: bool | None = False
+    load_session: DefaultOnError[bool | None] = False
     """Whether the agent supports `session/load`."""
 
-    mcp_capabilities: McpCapabilities | None = Field(default_factory=McpCapabilities)
+    mcp_capabilities: DefaultOnError[McpCapabilities | None] = Field(
+        default_factory=McpCapabilities
+    )
     """MCP capabilities supported by the agent."""
 
-    prompt_capabilities: PromptCapabilities | None = Field(default_factory=PromptCapabilities)
+    prompt_capabilities: DefaultOnError[PromptCapabilities | None] = Field(
+        default_factory=PromptCapabilities
+    )
     """Prompt capabilities supported by the agent."""
 
-    session_capabilities: SessionCapabilities | None = Field(default_factory=SessionCapabilities)
+    session_capabilities: DefaultOnError[SessionCapabilities | None] = Field(
+        default_factory=SessionCapabilities
+    )
     """Session capabilities supported by the agent."""
 
     @classmethod

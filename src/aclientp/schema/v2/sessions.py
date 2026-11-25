@@ -9,13 +9,13 @@ from __future__ import annotations
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Literal
 
-from pydantic import MISSING, Discriminator, Field, Tag, field_validator
+from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError, DefaultOnNull, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.base import (
     OTHER_TAG,
     AnnotatedObject,
     Unknown,
-    null_as_empty,
     open_discriminator,
 )
 from aclientp.schema.v2.commands import AvailableCommand  # noqa: TC001
@@ -71,22 +71,20 @@ class NewSessionRequest(AnnotatedObject):
     cwd: AbsolutePath
     """The working directory for this session. Must be an absolute path."""
 
-    additional_directories: Sequence[AbsolutePath] | MISSING = MISSING
+    additional_directories: DefaultOnNull[Sequence[AbsolutePath] | MISSING] = MISSING
     """Additional workspace roots for this session. Each path must be absolute."""
 
-    mcp_servers: Sequence[McpServer] | MISSING = MISSING
+    mcp_servers: DefaultOnNull[Sequence[McpServer] | MISSING] = MISSING
     """List of MCP (Model Context Protocol) servers the agent should connect to."""
 
     system_prompt: SystemPrompt | MISSING | None = MISSING
     """System-level instructions for the new session."""
 
-    config_options: Sequence[InitialSessionConfigOption] | MISSING = MISSING
+    config_options: DefaultOnNull[Sequence[InitialSessionConfigOption] | MISSING] = MISSING
     """Initial values for the session's config options.
 
     Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
     """
-
-    _config_options_null = field_validator("config_options", mode="before")(null_as_empty)
 
 
 class NewSessionResponse(AnnotatedObject):
@@ -98,10 +96,14 @@ class NewSessionResponse(AnnotatedObject):
     session_id: SessionId
     """Unique identifier for the created session."""
 
-    config_options: Sequence[SessionConfigOption] | MISSING = MISSING
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption] | MISSING]] = (
+        MISSING
+    )
     """Initial session configuration options."""
 
-    available_commands: Sequence[AvailableCommand] | MISSING = MISSING
+    available_commands: DefaultOnError[SkipInvalidItems[Sequence[AvailableCommand] | MISSING]] = (
+        MISSING
+    )
     """Initial commands the agent can execute in this session."""
 
 
@@ -134,10 +136,10 @@ class ResumeSessionRequest(AnnotatedObject):
     cwd: AbsolutePath
     """The working directory for this session. Must be an absolute path."""
 
-    additional_directories: Sequence[AbsolutePath] | MISSING = MISSING
+    additional_directories: DefaultOnNull[Sequence[AbsolutePath] | MISSING] = MISSING
     """Additional workspace roots to activate for this session. Each path must be absolute."""
 
-    mcp_servers: Sequence[McpServer] | MISSING = MISSING
+    mcp_servers: DefaultOnNull[Sequence[McpServer] | MISSING] = MISSING
     """List of MCP servers to connect to for this session."""
 
     replay_from: ReplayFrom | MISSING | None = MISSING
@@ -146,13 +148,11 @@ class ResumeSessionRequest(AnnotatedObject):
     system_prompt: SystemPrompt | MISSING | None = MISSING
     """System-level instructions for the resumed session."""
 
-    config_options: Sequence[InitialSessionConfigOption] | MISSING = MISSING
+    config_options: DefaultOnNull[Sequence[InitialSessionConfigOption] | MISSING] = MISSING
     """Initial values for the session's config options.
 
     Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
     """
-
-    _config_options_null = field_validator("config_options", mode="before")(null_as_empty)
 
 
 class ResumeSessionResponse(AnnotatedObject):
@@ -162,10 +162,14 @@ class ResumeSessionResponse(AnnotatedObject):
     ``replay_complete``) and before this response.
     """
 
-    config_options: Sequence[SessionConfigOption] | MISSING = MISSING
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption] | MISSING]] = (
+        MISSING
+    )
     """Initial session configuration options."""
 
-    available_commands: Sequence[AvailableCommand] | MISSING = MISSING
+    available_commands: DefaultOnError[SkipInvalidItems[Sequence[AvailableCommand] | MISSING]] = (
+        MISSING
+    )
     """Initial commands the agent can execute in this session."""
 
 
@@ -182,22 +186,20 @@ class ForkSessionRequest(AnnotatedObject):
     cwd: AbsolutePath
     """The working directory for this session. Must be an absolute path."""
 
-    additional_directories: Sequence[AbsolutePath] | MISSING = MISSING
+    additional_directories: DefaultOnNull[Sequence[AbsolutePath] | MISSING] = MISSING
     """Additional workspace roots to activate for this session. Each path must be absolute."""
 
-    mcp_servers: Sequence[McpServer] | MISSING = MISSING
+    mcp_servers: DefaultOnNull[Sequence[McpServer] | MISSING] = MISSING
     """List of MCP servers to connect to for this session."""
 
     system_prompt: SystemPrompt | MISSING | None = MISSING
     """System-level instructions for the forked session."""
 
-    config_options: Sequence[InitialSessionConfigOption] | MISSING = MISSING
+    config_options: DefaultOnNull[Sequence[InitialSessionConfigOption] | MISSING] = MISSING
     """Initial values for the forked session's config options.
 
     Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
     """
-
-    _config_options_null = field_validator("config_options", mode="before")(null_as_empty)
 
 
 class ForkSessionResponse(AnnotatedObject):
@@ -206,10 +208,14 @@ class ForkSessionResponse(AnnotatedObject):
     session_id: SessionId
     """Unique identifier for the newly created forked session."""
 
-    config_options: Sequence[SessionConfigOption] | MISSING = MISSING
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption] | MISSING]] = (
+        MISSING
+    )
     """Initial session configuration options."""
 
-    available_commands: Sequence[AvailableCommand] | MISSING = MISSING
+    available_commands: DefaultOnError[SkipInvalidItems[Sequence[AvailableCommand] | MISSING]] = (
+        MISSING
+    )
     """Initial commands the agent can execute in this session."""
 
 
@@ -254,23 +260,23 @@ class SessionInfo(AnnotatedObject):
     cwd: AbsolutePath
     """The working directory for this session. Must be an absolute path."""
 
-    additional_directories: Sequence[AbsolutePath] | MISSING = MISSING
+    additional_directories: DefaultOnNull[Sequence[AbsolutePath] | MISSING] = MISSING
     """Additional workspace roots reported for this session. Each path must be absolute."""
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable title for the session"""
 
-    updated_at: str | MISSING | None = MISSING
+    updated_at: DefaultOnError[str | MISSING | None] = MISSING
     """RFC 3339 timestamp of last activity."""
 
-    archived: bool | MISSING | None = MISSING
+    archived: DefaultOnError[bool | MISSING | None] = MISSING
     """Whether the session is archived."""
 
 
 class ListSessionsResponse(AnnotatedObject):
     """Response from listing sessions."""
 
-    sessions: Sequence[SessionInfo]
+    sessions: DefaultOnError[SkipInvalidItems[Sequence[SessionInfo]]]
     """Array of session information objects."""
 
     next_cursor: SessionListCursor | MISSING | None = MISSING
@@ -324,7 +330,7 @@ class SessionStatusResponse(AnnotatedObject):
     status: SessionStatus
     """Whether the Agent has the session in memory."""
 
-    state: StateUpdate | MISSING | None = MISSING
+    state: DefaultOnError[StateUpdate | MISSING | None] = MISSING
     """The session's current foreground state, as the same snapshot the Agent sends in
     ``state_update`` notifications."""
 
@@ -356,15 +362,11 @@ class SessionOptionsRequest(AnnotatedObject):
     cwd: AbsolutePath
     """The working directory to resolve options for. Must be an absolute path."""
 
-    additional_directories: Sequence[AbsolutePath] | MISSING = MISSING
+    additional_directories: DefaultOnNull[Sequence[AbsolutePath] | MISSING] = MISSING
     """Additional workspace roots to resolve options for. Each path must be absolute.
 
     Omitted, ``null`` and ``[]`` are equivalent; ``null`` is read as ``[]``.
     """
-
-    _additional_directories_null = field_validator("additional_directories", mode="before")(
-        null_as_empty
-    )
 
     session_id: SessionId | MISSING | None = MISSING
     """The session to resolve options for."""
@@ -373,9 +375,13 @@ class SessionOptionsRequest(AnnotatedObject):
 class SessionOptionsResponse(AnnotatedObject):
     """**UNSTABLE**: Response from ``session/options``."""
 
-    config_options: Sequence[SessionConfigOption] | MISSING = MISSING
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption] | MISSING]] = (
+        MISSING
+    )
     """The config options the session would start with, with the same rules as on
     ``NewSessionResponse``."""
 
-    available_commands: Sequence[AvailableCommand] | MISSING = MISSING
+    available_commands: DefaultOnError[SkipInvalidItems[Sequence[AvailableCommand] | MISSING]] = (
+        MISSING
+    )
     """Commands the Agent knows the session would have."""

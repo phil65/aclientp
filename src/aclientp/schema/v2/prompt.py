@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.common import (  # noqa: TC001
     Error,
@@ -119,7 +120,7 @@ StopReason = (
 
 
 class _StateBase(AnnotatedObject):
-    background: Sequence[BackgroundWork] | MISSING | None = MISSING
+    background: DefaultOnError[Sequence[BackgroundWork] | MISSING | None] = MISSING
     """Work running independently of foreground work, as a complete snapshot."""
 
 
@@ -137,13 +138,13 @@ class IdleStateUpdate(_StateBase):
 
     state: Literal["idle"] = Field(default="idle", init=False)
 
-    stop_reason: StopReason | MISSING | None = MISSING
+    stop_reason: DefaultOnError[StopReason | MISSING | None] = MISSING
     """Why foreground work stopped; omitted or ``None`` when there is no stop reason."""
 
-    error: Error | MISSING | None = MISSING
+    error: DefaultOnError[Error | MISSING | None] = MISSING
     """For ``stop_reason == "error"``: the failure, as a JSON-RPC error object."""
 
-    usage: Usage | MISSING | None = MISSING
+    usage: DefaultOnError[Usage | MISSING | None] = MISSING
     """**UNSTABLE**: Token usage of the completed foreground work."""
 
 

@@ -11,6 +11,7 @@ from typing import Annotated, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError, DefaultOnNull, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.common import AuthMethodId, EnvVariable  # noqa: TC001
 
@@ -26,7 +27,7 @@ class AuthMethodAgent(AnnotatedObject):
     name: str
     """Human-readable name of the authentication method."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Optional human-readable description of this authentication method. May contain
     Markdown, e.g. a code span for a command to run."""
 
@@ -47,14 +48,14 @@ class AuthMethodTerminal(AnnotatedObject):
     name: str
     """Human-readable name of the authentication method."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Optional human-readable description of this authentication method. May contain
     Markdown, e.g. a code span for a command to run."""
 
-    args: Sequence[str] | MISSING = MISSING
+    args: DefaultOnNull[Sequence[str] | MISSING] = MISSING
     """Additional arguments to append to the configured agent invocation for terminal auth."""
 
-    env: Sequence[EnvVariable] | MISSING = MISSING
+    env: DefaultOnNull[Sequence[EnvVariable] | MISSING] = MISSING
     """Additional environment variables to set on the configured agent invocation for terminal
     auth. Names MUST be unique. These values override same-named variables in the base launch
     configuration."""
@@ -121,20 +122,20 @@ class AuthAccount(AnnotatedObject):
     """Human-readable name for the account, suitable for display on its own, for example
     ``Claude Max``, ``OpenAI API key``, or ``Vertex AI``."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Short plain-text description shown with the label, such as the credential source,
     for example ``API key helper``. MUST NOT contain credentials."""
 
-    active: bool | MISSING | None = MISSING
+    active: DefaultOnError[bool | MISSING | None] = MISSING
     """Whether the agent currently uses this account by default."""
 
-    name: str | MISSING | None = MISSING
+    name: DefaultOnError[str | MISSING | None] = MISSING
     """Display name of the user, such as a username or full name."""
 
-    email: str | MISSING | None = MISSING
+    email: DefaultOnError[str | MISSING | None] = MISSING
     """Email address of the user."""
 
-    organization: str | MISSING | None = MISSING
+    organization: DefaultOnError[str | MISSING | None] = MISSING
     """Display name of the organization, team, or workspace the account is using."""
 
 
@@ -148,7 +149,7 @@ class AuthStatusResponse(AnnotatedObject):
     state: AuthState
     """Whether the agent can start sessions without the user signing in first."""
 
-    accounts: Sequence[AuthAccount] | MISSING = MISSING
+    accounts: DefaultOnError[SkipInvalidItems[Sequence[AuthAccount] | MISSING]] = MISSING
     """The accounts the agent has configured, for display."""
 
 
@@ -158,5 +159,5 @@ class AuthStatusUpdateNotification(AnnotatedObject):
     state: AuthState
     """Whether the agent can start sessions without the user signing in first."""
 
-    accounts: Sequence[AuthAccount] | MISSING = MISSING
+    accounts: DefaultOnError[SkipInvalidItems[Sequence[AuthAccount] | MISSING]] = MISSING
     """The accounts the agent has configured, for display."""

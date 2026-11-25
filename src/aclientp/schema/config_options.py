@@ -8,6 +8,7 @@ from typing import Annotated, Literal, Self
 from pydantic import Discriminator, Field, model_validator
 
 from aclientp.schema.base import AnnotatedObject
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 
 
 # Type aliases for config option identifiers
@@ -44,7 +45,7 @@ class SessionConfigSelectOption(AnnotatedObject):
     name: str
     """Human-readable label for this option value."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Optional description for this option value."""
 
 
@@ -57,7 +58,7 @@ class SessionConfigSelectGroup(AnnotatedObject):
     name: str
     """Human-readable label for this group."""
 
-    options: Sequence[SessionConfigSelectOption]
+    options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigSelectOption]]]
     """The set of option values in this group."""
 
 
@@ -76,10 +77,10 @@ class BaseSessionConfigOption(AnnotatedObject):
     name: str
     """Human-readable label for the option."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Optional description for the Client to display to the user."""
 
-    category: SessionConfigOptionCategory | None = None
+    category: DefaultOnError[SessionConfigOptionCategory | None] = None
     """Optional semantic category for this option (UX only)."""
 
 

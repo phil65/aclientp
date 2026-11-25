@@ -285,12 +285,13 @@ async def test_invalid_params_results_in_error_response(
             AsyncioReaderAdapter(s.server_reader),
         )
 
-        # Send initialize with wrong param type (protocolVersion should be int)
+        # Send initialize with wrong param type (protocolVersion must be an int; strings
+        # read as 0, see coerce_protocol_version)
         req = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
-            "params": {"protocolVersion": "oops"},
+            "params": {"protocolVersion": [1]},
         }
         s.client_writer.write((anyenv.dump_json(req) + "\n").encode())
         await s.client_writer.drain()

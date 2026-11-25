@@ -105,6 +105,10 @@ class Shape:
     constraints: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
     """Numeric and length constraints per property, as pydantic names (``ge``, ...)."""
 
+    deserialize: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    """``x-deserialize-*`` annotations per property, without the prefix
+    (``default-on-error``, ``skip-invalid-items``, ``default-on-null``)."""
+
     branch_of: str | None = None
     """For a variant made from a tagged branch inside an object definition: that
     definition. Our side models such an object either as one model of the same name,
@@ -171,6 +175,7 @@ class UpstreamSchema:
                     bases=collected.bases,
                     nullable=collected.nullable,
                     constraints=collected.constraints,
+                    deserialize=collected.deserialize,
                 )
                 branches = [
                     branch
@@ -230,6 +235,19 @@ class _Collected:
     bases: frozenset[str]
     nullable: frozenset[str]
     constraints: dict[str, dict[str, float]]
+    deserialize: dict[str, frozenset[str]]
+
+
+DESERIALIZE_PREFIX = "x-deserialize-"
+
+
+def _deserialize(schema: JSON) -> frozenset[str]:
+    """The ``x-deserialize-*`` annotations of a property schema, without the prefix."""
+    return frozenset(
+        key.removeprefix(DESERIALIZE_PREFIX)
+        for key, value in schema.items()
+        if key.startswith(DESERIALIZE_PREFIX) and value is True
+    )
 
 
 def _collect(node: JSON, defs: Mapping[str, JSON]) -> _Collected:
@@ -243,6 +261,7 @@ def _collect(node: JSON, defs: Mapping[str, JSON]) -> _Collected:
     required = set(node.get("required", []))
     nullable = {prop for prop, schema in own.items() if _accepts_null(schema, defs)}
     constraints = {prop: c for prop, schema in own.items() if (c := _constraints(schema, defs))}
+    deserialize = {prop: d for prop, schema in own.items() if (d := _deserialize(schema))}
     bases: set[str] = set()
     for part in node.get("allOf", []):
         if ref := part.get("$ref"):
@@ -254,6 +273,7 @@ def _collect(node: JSON, defs: Mapping[str, JSON]) -> _Collected:
         bases |= sub.bases
         nullable |= sub.nullable
         constraints = {**sub.constraints, **constraints}
+        deserialize = {**sub.deserialize, **deserialize}
     branch_required: list[frozenset[str]] = []
     for part in node.get("anyOf", []) + node.get("oneOf", []):
         resolved = defs[_ref_name(part["$ref"])] if "$ref" in part else part
@@ -262,12 +282,18 @@ def _collect(node: JSON, defs: Mapping[str, JSON]) -> _Collected:
         bases |= sub.bases
         nullable |= sub.nullable
         constraints = {**sub.constraints, **constraints}
+        deserialize = {**sub.deserialize, **deserialize}
         branch_required.append(sub.required)
     if branch_required:
         # Required in every branch means required for the object.
         required |= frozenset.intersection(*branch_required)
     return _Collected(
-        frozenset(props), frozenset(required), frozenset(bases), frozenset(nullable), constraints
+        frozenset(props),
+        frozenset(required),
+        frozenset(bases),
+        frozenset(nullable),
+        constraints,
+        deserialize,
     )
 
 
@@ -345,6 +371,7 @@ def _parse_variant(union: str, variant: JSON, defs: Mapping[str, JSON]) -> Shape
         collected.bases,
         collected.nullable,
         collected.constraints,
+        deserialize=collected.deserialize,
     )
 
 
@@ -695,6 +722,10 @@ class FieldInfo:
     constraints: dict[str, float]
     """Numeric and length constraints, e.g. ``{"ge": 1}``."""
 
+    deserialize: frozenset[str] = frozenset()
+    """Lenient deserialization markers (:mod:`aclientp.schema.lenient`), by
+    ``x-deserialize-*`` name."""
+
 
 def wire_fields(model: type[BaseModel]) -> dict[str, FieldInfo]:
     """Wire name and behaviour of each serialized field of ``model``."""
@@ -709,6 +740,7 @@ def wire_fields(model: type[BaseModel]) -> dict[str, FieldInfo]:
             and info.default_factory is None,
             accepts_none=any(member in (type(None), Any) for member in _flatten(info.annotation)),
             constraints=_field_constraints(info),
+            deserialize=_field_deserialize(info),
         )
         for name, info in model.model_fields.items()
         if not info.exclude
@@ -729,6 +761,16 @@ def _field_constraints(info: PydanticFieldInfo) -> dict[str, float]:
             if isinstance(value, int | float):
                 found[name] = float(value)
     return found
+
+
+def _field_deserialize(info: PydanticFieldInfo) -> frozenset[str]:
+    from aclientp.schema.lenient import LenientMarker
+
+    metadata = list(info.metadata)
+    for member in _members(info.annotation):
+        if get_origin(member) is Annotated:
+            metadata.extend(get_args(member)[1:])
+    return frozenset(item.kind for item in metadata if isinstance(item, LenientMarker))
 
 
 def _discriminator_value(model: type[BaseModel], prop: str) -> str | None:
@@ -954,6 +996,11 @@ def _compare_fields(
             yield Finding(
                 f"required-field:{key}.{prop}",
                 f"optional upstream, required in {where}: valid messages fail to parse",
+            )
+        if (expected := shape.deserialize.get(prop, frozenset())) != info.deserialize:
+            yield Finding(
+                f"deserialize:{key}.{prop}",
+                f"upstream x-deserialize {sorted(expected)}, {where} {sorted(info.deserialize)}",
             )
         if check_constraints and dict(shape.constraints.get(prop, {})) != info.constraints:
             yield Finding(

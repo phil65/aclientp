@@ -11,6 +11,7 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import MISSING, Discriminator, Field, Tag, model_validator
 
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.common import ElicitationId, RequestId, SessionId, ToolCallId  # noqa: TC001
 
@@ -31,7 +32,7 @@ class EnumOption(AnnotatedObject):
     title: str
     """Human-readable title for this option."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable description."""
 
 
@@ -40,10 +41,10 @@ class StringPropertySchema(AnnotatedObject):
 
     type: Literal["string"] = Field(default="string", init=False)
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Optional title for the property."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable description."""
 
     min_length: int | MISSING | None = Field(default=MISSING, ge=0)
@@ -55,7 +56,7 @@ class StringPropertySchema(AnnotatedObject):
     format: StringFormat | MISSING | None = MISSING
     """String format."""
 
-    default: str | MISSING | None = MISSING
+    default: DefaultOnError[str | MISSING | None] = MISSING
     """Default value."""
 
     enum: Sequence[str] | MISSING | None = Field(default=MISSING, min_length=1)
@@ -72,10 +73,10 @@ class NumberPropertySchema(AnnotatedObject):
 
     type: Literal["number"] = Field(default="number", init=False)
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Optional title for the property."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable description."""
 
     minimum: float | MISSING | None = MISSING
@@ -84,7 +85,7 @@ class NumberPropertySchema(AnnotatedObject):
     maximum: float | MISSING | None = MISSING
     """Maximum value (inclusive)."""
 
-    default: float | MISSING | None = MISSING
+    default: DefaultOnError[float | MISSING | None] = MISSING
     """Default value."""
 
 
@@ -93,10 +94,10 @@ class IntegerPropertySchema(AnnotatedObject):
 
     type: Literal["integer"] = Field(default="integer", init=False)
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Optional title for the property."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable description."""
 
     minimum: int | MISSING | None = MISSING
@@ -105,7 +106,7 @@ class IntegerPropertySchema(AnnotatedObject):
     maximum: int | MISSING | None = MISSING
     """Maximum value (inclusive)."""
 
-    default: int | MISSING | None = MISSING
+    default: DefaultOnError[int | MISSING | None] = MISSING
     """Default value."""
 
 
@@ -114,13 +115,13 @@ class BooleanPropertySchema(AnnotatedObject):
 
     type: Literal["boolean"] = Field(default="boolean", init=False)
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Optional title for the property."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable description."""
 
-    default: bool | MISSING | None = MISSING
+    default: DefaultOnError[bool | MISSING | None] = MISSING
     """Default value."""
 
 
@@ -171,10 +172,10 @@ class MultiSelectPropertySchema(AnnotatedObject):
 
     type: Literal["array"] = Field(default="array", init=False)
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Optional title for the property."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Human-readable description."""
 
     min_items: int | MISSING | None = Field(default=MISSING, ge=0)
@@ -186,7 +187,7 @@ class MultiSelectPropertySchema(AnnotatedObject):
     items: MultiSelectItems
     """The items definition describing allowed values."""
 
-    default: Sequence[str] | MISSING | None = MISSING
+    default: DefaultOnError[SkipInvalidItems[Sequence[str] | MISSING | None]] = MISSING
     """Default selected values."""
 
 
@@ -217,7 +218,7 @@ class ElicitationSchema(AnnotatedObject):
     type: ElicitationSchemaType = Field(default="object", init=False)
     """Type discriminator. Always ``"object"``. Any other value is rejected."""
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Optional title for the schema."""
 
     properties: dict[str, ElicitationPropertySchema]
@@ -226,7 +227,7 @@ class ElicitationSchema(AnnotatedObject):
     required: Sequence[str] | MISSING | None = MISSING
     """List of required property names."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Optional description of what this schema represents."""
 
 
@@ -246,7 +247,7 @@ class _ScopedRequest(AnnotatedObject):
     session_id: SessionId | MISSING = MISSING
     """Session scope: the session the elicitation belongs to."""
 
-    tool_call_id: ToolCallId | MISSING | None = MISSING
+    tool_call_id: DefaultOnError[ToolCallId | MISSING | None] = MISSING
     """Session scope: the tool call within the session, if any."""
 
     request_id: RequestId | MISSING = MISSING

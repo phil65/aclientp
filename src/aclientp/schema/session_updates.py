@@ -26,6 +26,7 @@ from aclientp.schema.content_blocks import (
     TextResourceContents,
 )
 from aclientp.schema.cursors import CursorAnchor, CursorCapabilities, CursorId  # noqa: TC001
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.slash_commands import AvailableCommand  # noqa: TC001
 from aclientp.schema.tool_call import (  # noqa: TC001
     ToolCallContent,
@@ -47,7 +48,7 @@ class BaseChunk(AnnotatedObject):
     content: ContentBlock
     """A single item of content"""
 
-    message_id: str | None = None
+    message_id: DefaultOnError[str | None] = None
     """A unique identifier for the message this chunk belongs to.
 
     All chunks belonging to the same message share the same ``message_id``.
@@ -300,28 +301,28 @@ class ToolCallProgress(AnnotatedObject):
     session_update: Literal["tool_call_update"] = Field(default="tool_call_update", init=False)
     """Tool call update."""
 
-    content: Sequence[ToolCallContent] | None = None
+    content: DefaultOnError[SkipInvalidItems[Sequence[ToolCallContent] | None]] = None
     """Replace the content collection."""
 
-    kind: ToolCallKind | None = None
+    kind: DefaultOnError[ToolCallKind | None] = None
     """Update the tool kind."""
 
-    locations: Sequence[ToolCallLocation] | None = None
+    locations: DefaultOnError[SkipInvalidItems[Sequence[ToolCallLocation] | None]] = None
     """Replace the locations collection."""
 
-    raw_input: Any | None = None
+    raw_input: DefaultOnError[Any | None] = None
     """Update the raw input."""
 
-    raw_output: Any | None = None
+    raw_output: DefaultOnError[Any | None] = None
     """Update the raw output."""
 
-    status: ToolCallStatus | None = None
+    status: DefaultOnError[ToolCallStatus | None] = None
     """Update the execution status."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """Update the human-readable title."""
 
-    name: str | None = None
+    name: DefaultOnError[str | None] = None
     """Update the programmatic name of the tool being invoked."""
 
     tool_call_id: str
@@ -350,7 +351,7 @@ class AgentPlanUpdate(AnnotatedObject):
 
     session_update: Literal["plan"] = Field(default="plan", init=False)
 
-    entries: Sequence[PlanEntry]
+    entries: DefaultOnError[SkipInvalidItems[Sequence[PlanEntry]]]
     """The list of tasks to be accomplished.
 
     When updating a plan, the agent must send a complete list of all entries
@@ -365,7 +366,7 @@ class AvailableCommandsUpdate(AnnotatedObject):
     )
     """Available commands are ready or have changed."""
 
-    available_commands: Sequence[AvailableCommand]
+    available_commands: DefaultOnError[SkipInvalidItems[Sequence[AvailableCommand]]]
     """Commands the agent can execute"""
 
 
@@ -382,7 +383,7 @@ class ConfigOptionUpdate(AnnotatedObject):
         default="config_option_update", init=False
     )
 
-    config_options: Sequence[SessionConfigOption]
+    config_options: DefaultOnError[SkipInvalidItems[Sequence[SessionConfigOption]]]
     """The full set of configuration options and their current values."""
 
 
@@ -392,34 +393,34 @@ class ToolCallStart(AnnotatedObject):
     session_update: Literal["tool_call"] = Field(default="tool_call", init=False)
     """Notification that a new tool call has been initiated."""
 
-    content: Sequence[ToolCallContent] | None = None
+    content: DefaultOnError[SkipInvalidItems[Sequence[ToolCallContent] | None]] = None
     """Content produced by the tool call."""
 
-    kind: ToolCallKind | None = None
+    kind: DefaultOnError[ToolCallKind | None] = None
     """The category of tool being invoked.
 
     Helps clients choose appropriate icons and UI treatment.
     """
 
-    locations: Sequence[ToolCallLocation] | None = None
+    locations: DefaultOnError[SkipInvalidItems[Sequence[ToolCallLocation] | None]] = None
     """File locations affected by this tool call.
 
     Enables "follow-along" features in clients.
     """
 
-    raw_input: Any | None = None
+    raw_input: DefaultOnError[Any | None] = None
     """Raw input parameters sent to the tool."""
 
-    raw_output: Any | None = None
+    raw_output: DefaultOnError[Any | None] = None
     """Raw output returned by the tool."""
 
-    status: ToolCallStatus | None = None
+    status: DefaultOnError[ToolCallStatus | None] = None
     """Current execution status of the tool call."""
 
     title: str
     """Human-readable title describing what the tool is doing."""
 
-    name: str | None = None
+    name: DefaultOnError[str | None] = None
     """Programmatic name of the tool being invoked."""
 
     tool_call_id: str
@@ -448,13 +449,13 @@ class Usage(AnnotatedObject):
     output_tokens: int = Field(ge=0)
     """Total output tokens across all turns."""
 
-    thought_tokens: int | None = Field(default=None, ge=0)
+    thought_tokens: DefaultOnError[int | None] = Field(default=None, ge=0)
     """Total thought/reasoning tokens."""
 
-    cached_read_tokens: int | None = Field(default=None, ge=0)
+    cached_read_tokens: DefaultOnError[int | None] = Field(default=None, ge=0)
     """Total cache read tokens."""
 
-    cached_write_tokens: int | None = Field(default=None, ge=0)
+    cached_write_tokens: DefaultOnError[int | None] = Field(default=None, ge=0)
     """Total cache write tokens."""
 
 
@@ -469,7 +470,7 @@ class UsageUpdate(AnnotatedObject):
     size: int = Field(ge=0)
     """Total context window size in tokens."""
 
-    cost: Cost | None = None
+    cost: DefaultOnError[Cost | None] = None
     """Cumulative session cost (optional)."""
 
 
@@ -486,10 +487,10 @@ class SessionInfoUpdate(AnnotatedObject):
         default="session_info_update", init=False
     )
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """New title for the session, or None to leave unchanged."""
 
-    updated_at: str | None = None
+    updated_at: DefaultOnError[str | None] = None
     """New ISO 8601 timestamp, or None to leave unchanged."""
 
 
@@ -511,7 +512,7 @@ class Notice(AnnotatedObject):
     title: str
     """Required non-empty plain-text title that can stand alone."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """Optional plain-text detail or guidance."""
 
 
@@ -538,10 +539,10 @@ class CompactionUpdate(AnnotatedObject):
     status: CompactionStatus
     """Current lifecycle status."""
 
-    summary: Sequence[ContentBlock] | None = None
+    summary: DefaultOnError[SkipInvalidItems[Sequence[ContentBlock] | None]] = None
     """Complete replacement user-displayable summary content for the compaction."""
 
-    error: str | None = None
+    error: DefaultOnError[str | None] = None
     """Human-readable error details for the compaction."""
 
 
@@ -603,7 +604,7 @@ class PromptSuggestionsUpdate(AnnotatedObject):
         default="prompt_suggestions_update", init=False
     )
 
-    suggestions: Sequence[PromptSuggestion]
+    suggestions: SkipInvalidItems[Sequence[PromptSuggestion]]
     """The suggestions the Client can offer, ordered most likely first."""
 
 
@@ -618,17 +619,17 @@ class IdleStateUpdate(AnnotatedObject):
 
     state: Literal["idle"] = Field(default="idle", init=False)
 
-    stop_reason: (
+    stop_reason: DefaultOnError[
         Literal["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled", "error"]
         | str
         | None
-    ) = None
+    ] = None
     """Why foreground work stopped. Omitted when there is no stop reason."""
 
-    error: Error | None = None
+    error: DefaultOnError[Error | None] = None
     """For ``stop_reason: "error"``: the failure, as a JSON-RPC error object."""
 
-    usage: Usage | None = None
+    usage: DefaultOnError[Usage | None] = None
     """Token usage for completed foreground work."""
 
 
@@ -673,16 +674,16 @@ class SubagentUpdate(AnnotatedObject):
     session_id: str
     """The opaque session ID identifying the child in all ACP messages."""
 
-    title: str | None = None
+    title: DefaultOnError[str | None] = None
     """The parent's human-readable display title for this child."""
 
-    description: str | None = None
+    description: DefaultOnError[str | None] = None
     """The parent's description of the child's role or purpose."""
 
-    capabilities: SubagentSessionCapabilities | None = None
+    capabilities: DefaultOnError[SubagentSessionCapabilities | None] = None
     """Client-initiated session mutations permitted for this subagent session."""
 
-    state: StateUpdate | None = None
+    state: DefaultOnError[StateUpdate | None] = None
     """Current state snapshot for the child session."""
 
     cwd: str | None = None
@@ -704,19 +705,19 @@ class SessionMessage(AnnotatedObject):
     message_id: str
     """Identifier of this message within the enclosing session's transcript."""
 
-    sender_session_id: str | None = None
+    sender_session_id: DefaultOnError[str | None] = None
     """The sending session."""
 
-    recipient_session_id: str | None = None
+    recipient_session_id: DefaultOnError[str | None] = None
     """The receiving session."""
 
-    sender_message_id: str | None = None
+    sender_message_id: DefaultOnError[str | None] = None
     """On an incoming view, the ``message_id`` of the outgoing view in the sender's transcript."""
 
-    recipient_message_id: str | None = None
+    recipient_message_id: DefaultOnError[str | None] = None
     """On an outgoing view, the ``message_id`` of the incoming view in the recipient."""
 
-    content: Sequence[ContentBlock] | None = None
+    content: DefaultOnError[SkipInvalidItems[Sequence[ContentBlock] | None]] = None
     """Replaces all content when non-empty. ``None`` or ``[]`` clears it."""
 
 
@@ -753,7 +754,7 @@ class CursorUpdate(AnnotatedObject):
     anchor: CursorAnchor | None = None
     """Where the cursor is. Required on the first update for a cursor."""
 
-    capabilities: CursorCapabilities | None = None
+    capabilities: DefaultOnError[CursorCapabilities | None] = None
     """The methods that currently accept this cursor; a new cursor starts with none."""
 
 

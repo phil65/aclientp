@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError, SkipInvalidItems  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.common import Annotations, Icon, MediaType  # noqa: TC001
 
@@ -19,7 +20,7 @@ class TextContent(AnnotatedObject):
     text: str
     """The text; clients SHOULD render it as Markdown."""
 
-    annotations: Annotations | MISSING | None = MISSING
+    annotations: DefaultOnError[Annotations | MISSING | None] = MISSING
     """Display and routing hints."""
 
 
@@ -34,10 +35,10 @@ class ImageContent(AnnotatedObject):
     mime_type: MediaType
     """MIME type of the image."""
 
-    uri: str | MISSING | None = MISSING
+    uri: DefaultOnError[str | MISSING | None] = MISSING
     """URI associated with the image."""
 
-    annotations: Annotations | MISSING | None = MISSING
+    annotations: DefaultOnError[Annotations | MISSING | None] = MISSING
     """Display and routing hints."""
 
 
@@ -52,7 +53,7 @@ class AudioContent(AnnotatedObject):
     mime_type: MediaType
     """MIME type of the audio."""
 
-    annotations: Annotations | MISSING | None = MISSING
+    annotations: DefaultOnError[Annotations | MISSING | None] = MISSING
     """Display and routing hints."""
 
 
@@ -67,22 +68,22 @@ class ResourceLink(AnnotatedObject):
     uri: str
     """URI of the resource."""
 
-    title: str | MISSING | None = MISSING
+    title: DefaultOnError[str | MISSING | None] = MISSING
     """Display title."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Plain-text description of the linked resource."""
 
-    icons: Sequence[Icon] | MISSING | None = MISSING
+    icons: DefaultOnError[SkipInvalidItems[Sequence[Icon] | MISSING | None]] = MISSING
     """Icons a user interface can show."""
 
-    mime_type: MediaType | MISSING | None = MISSING
+    mime_type: DefaultOnError[MediaType | MISSING | None] = MISSING
     """MIME type of the resource."""
 
-    size: int | MISSING | None = Field(default=MISSING, ge=0)
+    size: DefaultOnError[int | MISSING | None] = Field(default=MISSING, ge=0)
     """Size of the resource in bytes."""
 
-    annotations: Annotations | MISSING | None = MISSING
+    annotations: DefaultOnError[Annotations | MISSING | None] = MISSING
     """Display and routing hints."""
 
 
@@ -95,7 +96,7 @@ class TextResourceContents(AnnotatedObject):
     uri: str
     """URI of the resource."""
 
-    mime_type: MediaType | MISSING | None = MISSING
+    mime_type: DefaultOnError[MediaType | MISSING | None] = MISSING
     """MIME type of the resource."""
 
 
@@ -108,7 +109,7 @@ class BlobResourceContents(AnnotatedObject):
     uri: str
     """URI of the resource."""
 
-    mime_type: MediaType | MISSING | None = MISSING
+    mime_type: DefaultOnError[MediaType | MISSING | None] = MISSING
     """MIME type of the resource."""
 
 
@@ -127,7 +128,7 @@ class EmbeddedResource(AnnotatedObject):
     resource: EmbeddedResourceResource
     """The embedded contents."""
 
-    annotations: Annotations | MISSING | None = MISSING
+    annotations: DefaultOnError[Annotations | MISSING | None] = MISSING
     """Display and routing hints."""
 
 

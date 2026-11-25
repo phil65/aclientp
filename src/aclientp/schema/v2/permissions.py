@@ -11,6 +11,7 @@ from typing import Annotated, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag
 
+from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 from aclientp.schema.v2.base import OTHER_TAG, AnnotatedObject, Unknown, open_discriminator
 from aclientp.schema.v2.common import (  # noqa: TC001
     AbsolutePath,
@@ -59,10 +60,10 @@ class CommandPermissionSubject(AnnotatedObject):
     cwd: AbsolutePath
     """Absolute working directory of the command."""
 
-    tool_call_id: ToolCallId | MISSING | None = MISSING
+    tool_call_id: DefaultOnError[ToolCallId | MISSING | None] = MISSING
     """The associated tool call, when known."""
 
-    terminal_id: TerminalId | MISSING | None = MISSING
+    terminal_id: DefaultOnError[TerminalId | MISSING | None] = MISSING
     """The associated terminal, when already known."""
 
 
@@ -91,7 +92,7 @@ class RequestPermissionRequest(AnnotatedObject):
     title: str
     """Title of the permission prompt (not the title of a tool call)."""
 
-    description: str | MISSING | None = MISSING
+    description: DefaultOnError[str | MISSING | None] = MISSING
     """Why permission is needed. May contain Markdown."""
 
     subject: RequestPermissionSubject | MISSING | None = MISSING

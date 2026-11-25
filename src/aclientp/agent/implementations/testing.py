@@ -52,8 +52,9 @@ class TestAgent(Agent):
 
     async def initialize(self, params: InitializeRequest) -> InitializeResponse:
         return InitializeResponse(
-            # Negotiate like a real v1 agent: never answer above the version it speaks.
-            protocol_version=min(params.protocol_version, PROTOCOL_VERSION),
+            # Negotiate like a real v1 agent: it speaks only v1, so it answers with v1
+            # for a higher, lower or unknown requested version; the client decides.
+            protocol_version=PROTOCOL_VERSION,
             agent_capabilities=None,
             agent_info=Implementation(name="test-agent", version="1.0"),
         )
