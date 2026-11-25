@@ -61,7 +61,7 @@ async def relay(url: str, headers: dict[str, str]) -> None:
             try:
                 async for chunk in source:
                     await sink.send(chunk)
-            except (anyio.BrokenResourceError, anyio.ClosedResourceError):
+            except anyio.BrokenResourceError, anyio.ClosedResourceError:
                 pass
             # Either side ending ends the relay (don't linger as an orphan).
             tg.cancel_scope.cancel()

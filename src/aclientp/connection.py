@@ -325,7 +325,7 @@ class Connection:
             await self._handle_line(buffer)
         except asyncio.CancelledError:
             return
-        except (anyio.ClosedResourceError, anyio.BrokenResourceError, anyio.EndOfStream):
+        except anyio.ClosedResourceError, anyio.BrokenResourceError, anyio.EndOfStream:
             pass
         # EOF / closed: reject in-flight requests so callers get an error
         # instead of hanging forever (e.g. subprocess crash during initialize).

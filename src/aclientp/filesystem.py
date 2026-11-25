@@ -290,7 +290,7 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
                         )
 
                 raise FileNotFoundError(f"File not found: {path}")
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 raise FileNotFoundError(f"Could not get file info for {path}: {e}") from e
 
     info = sync_wrapper(_info)
@@ -310,7 +310,7 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
 
         try:
             output, exit_code = await self.requests.run_command(test_cmd, timeout_seconds=5)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return False
         else:
             return exists_cmd.parse_command(output, exit_code if exit_code is not None else 1)
@@ -332,7 +332,7 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
 
         try:
             output, exit_code = await self.requests.run_command(test_cmd, timeout_seconds=5)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return False
         else:
             return isdir_cmd.parse_command(output, exit_code if exit_code is not None else 1)
@@ -354,7 +354,7 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
 
         try:
             output, exit_code = await self.requests.run_command(test_cmd, timeout_seconds=5)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return False
         else:
             return isfile_cmd.parse_command(output, exit_code if exit_code is not None else 1)
