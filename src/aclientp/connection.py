@@ -405,7 +405,9 @@ class Connection:
                 continue
             if inspect.isawaitable(result) and not self._tasks.closed:
                 name = f"acp.Connection.observer.{direction}"
-                self._tasks.create(result, name=name, on_error=self._on_observer_error)
+                # A Future or other awaitable is not a coroutine `create_task` accepts
+                coro = result if inspect.iscoroutine(result) else _await(result)
+                self._tasks.create(coro, name=name, on_error=self._on_observer_error)
 
     def _on_observer_error(self, task: asyncio.Task[Any], exc: BaseException) -> None:
         logger.error("Stream observer coroutine failed", exc_info=exc)
@@ -435,7 +437,16 @@ class Connection:
         else:
             payload = handler.result()
         try:
-            await self._sender.send(payload)
+            try:
+                await self._sender.send(payload)
+            except ConnectionError:
+                raise
+            except Exception:  # Not encodable: the peer still gets an answer
+                logger.exception("Failed to encode response", request_id=request_id)
+                details = {"details": "<unserializable response>"}
+                error = RequestError.internal_error(details).to_error_obj()
+                payload = {"jsonrpc": "2.0", "id": request_id, "error": error}
+                await self._sender.send(payload)
         except ConnectionError:
             if not self.closed:
                 raise
@@ -454,15 +465,12 @@ class Connection:
         except RequestError as exc:
             payload["error"] = exc.to_error_obj()
         except ValidationError as exc:
-            errors = exc.errors(include_url=False, include_context=False)
+            # pydantic's own JSON: `input` may hold any object, which `errors()` keeps as is
+            errors = anyenv.load_json(exc.json(include_url=False, include_context=False))
             payload["error"] = RequestError.invalid_params({"errors": errors}).to_error_obj()
         except Exception as exc:
             logger.exception("Unhandled error while handling request", method=method)
-            try:
-                data = anyenv.load_json(str(exc), return_type=dict)
-            except Exception:  # noqa: BLE001
-                data = {"details": str(exc)}
-            payload["error"] = RequestError.internal_error(data).to_error_obj()
+            payload["error"] = RequestError.internal_error(_error_data(exc)).to_error_obj()
         else:
             if isinstance(result, BaseModel):
                 result = result.model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -521,6 +529,22 @@ class Connection:
 
     def _on_task_error(self, task: asyncio.Task[Any], exc: BaseException) -> None:
         logger.error("Background task failed", task=task.get_name(), exc_info=exc)
+
+
+async def _await(awaitable: Awaitable[Any]) -> None:
+    await awaitable
+
+
+def _error_data(exc: Exception) -> dict[str, Any]:
+    """The ``data`` of an internal error for ``exc``, even if it cannot be printed."""
+    try:
+        text = str(exc)
+    except Exception:  # noqa: BLE001
+        return {"details": f"<unprintable {type(exc).__name__}>"}
+    try:
+        return anyenv.load_json(text, return_type=dict)
+    except Exception:  # noqa: BLE001
+        return {"details": text}
 
 
 def _is_batch(line: str) -> bool:

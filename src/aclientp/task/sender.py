@@ -92,7 +92,7 @@ class MessageSender:
 
         Raises:
             ConnectionError: The sender is closed or the stream failed earlier.
-            TypeError: The payload is not JSON-serializable.
+            anyenv.JsonDumpError: The payload is not JSON-serializable.
         """
         if self._closed:
             raise ConnectionError("Sender closed") from self._failure
@@ -106,7 +106,7 @@ class MessageSender:
 
         Raises:
             ConnectionError: The sender is closed or the stream failed.
-            TypeError: The payload is not JSON-serializable.
+            anyenv.JsonDumpError: The payload is not JSON-serializable.
         """
         await self.send_nowait(payload)
 
@@ -128,7 +128,7 @@ class MessageSender:
     def _encode(self, payload: dict[str, Any]) -> bytes:
         try:
             return (anyenv.dump_json(payload) + "\n").encode()
-        except TypeError:
+        except anyenv.JsonDumpError, TypeError:
             offenders = "\n".join(
                 f"  {path}: {type(value).__name__} = {value!r:.200s}"
                 for path, value in _find_non_serializable(payload)

@@ -10,12 +10,13 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 import anyenv
+import pydantic
 import pytest
 
 from aclientp import RequestError
 from aclientp.client.connection import ClientSideConnection
 from aclientp.client.implementations.noop_client import NoOpClient
-from aclientp.connection import Connection
+from aclientp.connection import Connection, StreamEvent
 from aclientp.schema import PromptRequest, TextContentBlock
 from aclientp.task import TaskSupervisor
 from tests.streams import TIMEOUT, Peer, make_streams
@@ -498,3 +499,82 @@ async def test_close_while_the_peer_streams_notifications_logs_no_error(
     await asyncio.sleep(0.05)
     flooding.cancel()
     assert errors == []
+
+
+# --- every request is answered -----------------------------------------------
+
+
+class _UnprintableError(Exception):
+    def __str__(self) -> str:
+        raise RuntimeError("no str for you")
+
+
+class _Model(pydantic.BaseModel):
+    x: int
+
+
+async def _answer_of(handler: Any) -> dict[str, Any]:
+    """Send one request to a connection running ``handler``; return the peer's answer."""
+    writer, reader, peer = make_streams()
+    conn = Connection(handler, writer, reader)
+    try:
+        await peer.send({"jsonrpc": "2.0", "id": 7, "method": "boom", "params": {}})
+        return await peer.receive()  # Fails after TIMEOUT instead of hanging
+    finally:
+        await conn.close()
+
+
+async def test_non_json_result_is_answered_with_internal_error() -> None:
+    async def handler(method: str, params: Any, is_notification: bool) -> Any:
+        return {"x": object()}
+
+    answer = await _answer_of(handler)
+    assert answer["id"] == 7
+    assert answer["error"]["code"] == -32603
+    assert answer["error"]["data"] == {"details": "<unserializable response>"}
+
+
+async def test_request_error_with_non_json_data_is_answered() -> None:
+    async def handler(method: str, params: Any, is_notification: bool) -> Any:
+        raise RequestError(-32000, "boom", {"o": object()})
+
+    answer = await _answer_of(handler)
+    assert answer["id"] == 7
+    assert answer["error"]["code"] == -32603
+
+
+async def test_unprintable_exception_is_answered() -> None:
+    async def handler(method: str, params: Any, is_notification: bool) -> Any:
+        raise _UnprintableError
+
+    answer = await _answer_of(handler)
+    assert answer["error"]["code"] == -32603
+    assert answer["error"]["data"] == {"details": "<unprintable _UnprintableError>"}
+
+
+async def test_validation_error_with_non_json_input_is_answered() -> None:
+    async def handler(method: str, params: Any, is_notification: bool) -> Any:
+        return _Model(x=object())  # type: ignore[arg-type]
+
+    answer = await _answer_of(handler)
+    assert answer["error"]["code"] == -32602
+    (error,) = answer["error"]["data"]["errors"]
+    assert error["loc"] == ["x"]
+    assert isinstance(error["input"], str)
+
+
+async def test_observer_returning_a_future_keeps_the_connection_alive() -> None:
+    def observer(event: StreamEvent) -> Any:
+        future = asyncio.get_running_loop().create_future()
+        future.set_result(None)
+        return future
+
+    writer, reader, peer = make_streams()
+    conn = Connection(_noop_handler, writer, reader, observers=[observer])
+    try:
+        await conn.send_notification("ping", {})
+        assert (await peer.receive())["method"] == "ping"
+        await peer.send({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}})
+        assert (await peer.receive()) == {"jsonrpc": "2.0", "id": 1, "result": {}}
+    finally:
+        await conn.close()
