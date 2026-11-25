@@ -19,3 +19,18 @@ commit = "105e1c38daf76bc832e872e95904be6dabd32372"
 schema = ["schema-v1.34.1", "schema-v2.0.0-beta.3"]
 paths = ["src/v2", "src/v1/acp-agent.ts"]
 description = "Claude Code ACP adapter (v0.110.0): a production agent serving v1 and v2"
+
+[python-sdk]
+repo = "agentclientprotocol/python-sdk"
+commit = "9aedba35a3d991cfebcc1e3b2d8c9cf9a335edf2"
+schema = ["schema-v1.35.0", "schema-v2.0.0-alpha.7"]
+paths = [
+  "src/acp/connection.py",
+  "src/acp/task",
+  "src/acp/stdio.py",
+  "src/acp/transports.py",
+  "src/acp/_deserialize.py",
+  "src/acp/http",
+  "src/acp/ws",
+]
+description = "Official Python SDK (0.12.1): runtime fixes (connection, transports, deserialization); last reviewed 2026-11-25"

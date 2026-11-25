@@ -269,6 +269,23 @@ test suite runs the same check, so undocumented drift fails CI.
 and claude-agent-acp) by commit; `refs` lists the upstream commits since each pin with
 a compare link.
 
+The official Python SDK is pinned in `schema/references.toml` as well (last reviewed
+`9aedba3`, 2026-11-25): `refs` lists its commits since, so check them for bug fixes
+(transport, connection lifecycle, deserialization) when moving schema pins. Moving the
+pin with `refs --update python-sdk` records the next review.
+
+### Lenient deserialization
+
+The schema marks fields whose bad values must not fail a whole message
+(`x-deserialize-default-on-error`, `-skip-invalid-items`, `-default-on-null`). The
+models carry matching markers from `aclientp.schema.lenient` (`DefaultOnError`,
+`SkipInvalidItems`, `DefaultOnNull`), so a message from a newer peer still parses: an
+unknown tool kind or status, a malformed `_meta`, an unknown content block, config
+option or auth method type is replaced by the default or dropped, not the whole
+`session/update`, `session/new` or `initialize`. Invalid model instances built by local
+code still raise. The check compares the markers with the annotations, so new ones
+upstream show up as drift.
+
 ## Status
 
 v1 follows `schema-v1.35.0`, v2 follows the draft `schema-v2.0.0-beta.4` (pinned in
