@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from contextlib import asynccontextmanager
-import io
+import os
+import queue
 import sys
+import threading
 from typing import TYPE_CHECKING, Any
 
 import anyio
@@ -27,24 +30,67 @@ if TYPE_CHECKING:
 
 
 class StdinStream(ByteReceiveStream):
-    """Wrapper for stdin that implements ByteReceiveStream interface."""
+    """Stdin as a ByteReceiveStream, read by a daemon thread.
+
+    A blocking read cannot be interrupted. In the default executor it would keep
+    ``asyncio.run`` from returning until the client sends data or closes the pipe, so an
+    agent could not exit on its own (on a fatal error or a signal) while the client
+    keeps stdin open. A daemon thread does not hold the interpreter. It reads the file
+    descriptor (``os.read``), not ``sys.stdin.buffer``: a daemon thread blocked inside
+    the buffered reader would hold its lock at interpreter shutdown, which is fatal.
+    """
+
+    def __init__(self, fd: int | None = None) -> None:
+        """Read from file descriptor ``fd`` (default: stdin's)."""
+        self._fd = fd
+        self._requests: queue.SimpleQueue[tuple[asyncio.Future[bytes], int]] = queue.SimpleQueue()
+        self._thread: threading.Thread | None = None
+        self._unclaimed = b""  # Read for a receive() that was cancelled meanwhile
 
     async def receive(self, max_bytes: int = 65536) -> bytes:
-        """Read bytes from stdin.
-
-        Uses read1() which returns as soon as any data is available,
-        rather than blocking until max_bytes are read.
-        """
-        loop = asyncio.get_running_loop()
-        # read1() returns immediately when any data is available (up to max_bytes)
-        # unlike read() which blocks until exactly max_bytes are read or EOF
-        stdin_buffer = sys.stdin.buffer
-        if not isinstance(stdin_buffer, io.BufferedIOBase):
-            raise TypeError(f"Unsupported stdin buffer type: {type(stdin_buffer)}")
-        data = await loop.run_in_executor(None, lambda: stdin_buffer.read1(max_bytes))
+        """Read up to ``max_bytes``, returning as soon as any data is available."""
+        if self._unclaimed:
+            data, self._unclaimed = self._unclaimed[:max_bytes], self._unclaimed[max_bytes:]
+            return data
+        if self._thread is None:
+            fd = sys.stdin.fileno() if self._fd is None else self._fd
+            self._thread = threading.Thread(
+                target=self._read_loop, args=(fd,), name="acp-stdin", daemon=True
+            )
+            self._thread.start()
+        future: asyncio.Future[bytes] = asyncio.get_running_loop().create_future()
+        self._requests.put((future, max_bytes))
+        data = await future
         if not data:
             raise anyio.EndOfStream
         return data
+
+    def _read_loop(self, fd: int) -> None:
+        while True:
+            future, max_bytes = self._requests.get()
+            try:
+                # Returns as soon as any data is available (up to max_bytes)
+                data = os.read(fd, max_bytes)
+            except Exception as exc:  # noqa: BLE001
+                self._deliver(future, None, exc)
+                continue
+            self._deliver(future, data, None)
+            if not data:
+                return
+
+    def _deliver(
+        self, future: asyncio.Future[bytes], data: bytes | None, exc: Exception | None
+    ) -> None:
+        def settle() -> None:
+            if future.cancelled():
+                self._unclaimed += data or b""
+            elif exc is not None:
+                future.set_exception(exc)
+            else:
+                future.set_result(data or b"")
+
+        with contextlib.suppress(RuntimeError):  # The event loop is closed
+            future.get_loop().call_soon_threadsafe(settle)
 
     async def aclose(self) -> None:
         """Close is a no-op for stdin."""
