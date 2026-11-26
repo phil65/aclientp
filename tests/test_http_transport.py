@@ -225,3 +225,32 @@ def test_parse_header_expands_environment_variables() -> None:
         parse_header("X-API-Key: ${MISSING}", env)
     with pytest.raises(ValueError, match="expected 'Name: value'"):
         parse_header("no-colon", env)
+
+
+async def test_posts_have_a_read_timeout_and_sse_streams_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = FakeServer()
+    timeouts: dict[str, list[Any]] = {"GET": [], "POST": []}
+
+    async def recording(request: httpx2.Request) -> httpx2.Response:
+        if request.method in timeouts:
+            timeouts[request.method].append(request.extensions["timeout"]["read"])
+        return await server.handle(request)
+
+    real_client = httpx2.AsyncClient
+
+    def owned_client(**kwargs: Any) -> httpx2.AsyncClient:
+        return real_client(transport=httpx2.MockTransport(recording), **kwargs)
+
+    monkeypatch.setattr(httpx2, "AsyncClient", owned_client)
+    async with connect_http_transport(URL, timeout=7) as (reader, writer):
+        conn = ClientSideConnection(lambda _agent: NoOpClient(), writer, reader)
+        async with asyncio.timeout(TIMEOUT):
+            await conn.initialize(InitializeRequest(protocol_version=1))
+            await conn.new_session(NewSessionRequest(cwd="/tmp", mcp_servers=[]))
+        await conn.close()
+    assert timeouts["POST"]
+    assert set(timeouts["POST"]) == {7}
+    assert timeouts["GET"]
+    assert set(timeouts["GET"]) == {None}

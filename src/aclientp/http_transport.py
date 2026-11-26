@@ -190,10 +190,20 @@ class _HttpConnection:
             headers[HEADER_SESSION_ID] = session_id
         return headers
 
+    def _sse_timeout(self) -> httpx2.Timeout:
+        """The client's timeouts, without a read timeout: SSE streams idle between events."""
+        default = self.client.timeout
+        return httpx2.Timeout(
+            connect=default.connect, read=None, write=default.write, pool=default.pool
+        )
+
     async def _connection_stream(self, *, task_status: anyio.abc.TaskStatus[None]) -> None:
         started = False
         try:
-            async with self.client.stream("GET", self.url, headers=self._sse_headers()) as resp:
+            headers = self._sse_headers()
+            async with self.client.stream(
+                "GET", self.url, headers=headers, timeout=self._sse_timeout()
+            ) as resp:
                 if resp.status_code != httpx2.codes.OK:
                     body = (await resp.aread()).decode(errors="replace")
                     msg = f"ACP connection stream failed ({resp.status_code}): {body[:200]}"
@@ -226,7 +236,9 @@ class _HttpConnection:
         with session.cancel:
             try:
                 headers = self._sse_headers(session_id)
-                async with self.client.stream("GET", self.url, headers=headers) as resp:
+                async with self.client.stream(
+                    "GET", self.url, headers=headers, timeout=self._sse_timeout()
+                ) as resp:
                     if resp.status_code != httpx2.codes.OK:
                         body = (await resp.aread()).decode(errors="replace")
                         session.error = (
@@ -480,7 +492,9 @@ async def connect_http_transport(
         client = httpx2.AsyncClient(
             http2=_http2_available(),
             headers=dict(headers or {}),
-            timeout=httpx2.Timeout(timeout, read=None),
+            # Finite for POSTs: one the server never answers would otherwise block
+            # every later message (they are sent one at a time).
+            timeout=httpx2.Timeout(timeout),
         )
     elif headers:
         client.headers.update(headers)
