@@ -164,27 +164,27 @@ class AgentSideConnection(Client):
         self, params: RequestPermissionRequest
     ) -> RequestPermissionResponse:
         """Request permission from the client."""
-        dct = params.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
+        dct = params.model_dump(by_alias=True, exclude_none=True)
         method = "session/request_permission"
         resp = await self._conn.request_object(method, dct)
         return RequestPermissionResponse.model_validate(resp)
 
     async def read_text_file(self, params: ReadTextFileRequest) -> ReadTextFileResponse:
         """Read text file from the client."""
-        dct = params.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
+        dct = params.model_dump(by_alias=True, exclude_none=True)
         resp = await self._conn.request_object("fs/read_text_file", dct)
         return ReadTextFileResponse.model_validate(resp)
 
     async def write_text_file(self, params: WriteTextFileRequest) -> WriteTextFileResponse:
         """Write text file to the client."""
-        dct = params.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
+        dct = params.model_dump(by_alias=True, exclude_none=True)
         r = await self._conn.request_object("fs/write_text_file", dct)
         return WriteTextFileResponse.model_validate(r)
 
     # async def createTerminal(self, params: CreateTerminalRequest) -> TerminalHandle:
     async def create_terminal(self, params: CreateTerminalRequest) -> CreateTerminalResponse:
         """Create a terminal on the client."""
-        dct = params.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
+        dct = params.model_dump(by_alias=True, exclude_none=True)
         resp = await self._conn.request_object("terminal/create", dct)
         #  resp = CreateTerminalResponse.model_validate(resp)
         #  return TerminalHandle(resp.terminal_id, params.session_id, self._conn)
@@ -200,13 +200,13 @@ class AgentSideConnection(Client):
 
     async def terminal_output(self, params: TerminalOutputRequest) -> TerminalOutputResponse:
         """Show terminal output on the client."""
-        dct = params.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
+        dct = params.model_dump(by_alias=True, exclude_none=True)
         resp = await self._conn.request_object("terminal/output", dct)
         return TerminalOutputResponse.model_validate(resp)
 
     async def release_terminal(self, params: ReleaseTerminalRequest) -> ReleaseTerminalResponse:
         """Release a terminal on the client."""
-        dct = params.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
+        dct = params.model_dump(by_alias=True, exclude_none=True)
         resp = await self._conn.request_object("terminal/release", dct)
         return ReleaseTerminalResponse.model_validate(resp)
 
@@ -214,25 +214,25 @@ class AgentSideConnection(Client):
         self, params: WaitForTerminalExitRequest
     ) -> WaitForTerminalExitResponse:
         """Wait for a terminal to exit on the client."""
-        dct = params.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
+        dct = params.model_dump(by_alias=True, exclude_none=True)
         resp = await self._conn.request_object("terminal/wait_for_exit", dct)
         return WaitForTerminalExitResponse.model_validate(resp)
 
     async def kill_terminal(self, params: KillTerminalRequest) -> KillTerminalResponse:
         """Kill a terminal on the client."""
-        dct = params.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
+        dct = params.model_dump(by_alias=True, exclude_none=True)
         resp = await self._conn.request_object("terminal/kill", dct)
         return KillTerminalResponse.model_validate(resp)
 
     async def elicitation(self, params: ElicitationRequest) -> ElicitationResponse:
         """Request structured user input from the client."""
-        dct = params.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
+        dct = params.model_dump(by_alias=True, exclude_none=True)
         resp = await self._conn.request_object("elicitation/create", dct)
         return ElicitationResponse.model_validate(resp)
 
     async def elicitation_complete(self, params: ElicitationCompleteNotification) -> None:
         """Notify the client that a URL-based elicitation has completed."""
-        dct = params.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
+        dct = params.model_dump(by_alias=True, exclude_none=True)
         await self._conn.send_notification("elicitation/complete", dct)
 
     async def auth_status_update(self, params: AuthStatusUpdateNotification) -> None:

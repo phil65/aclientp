@@ -115,65 +115,36 @@ class ClientSideConnection(Agent):
     async def _request[T: BaseModel](
         self, method: str, params: BaseModel, response_type: type[T]
     ) -> T:
+        # No exclude_defaults: required fields with defaults (``mcpServers: []``,
+        # discriminators like an MCP server's ``type``) must stay on the wire.
         dct = params.model_dump(mode="json", by_alias=True, exclude_none=True)
         resp = await self._conn.request_object(method, dct)
         return response_type.model_validate(resp)
 
     # agent-bound methods (client -> agent)
     async def initialize(self, params: InitializeRequest) -> InitializeResponse:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
-        resp = await self._conn.request_object("initialize", dct)
-        return InitializeResponse.model_validate(resp)
+        return await self._request("initialize", params, InitializeResponse)
 
     async def new_session(self, params: NewSessionRequest) -> NewSessionResponse:
-        # Don't exclude_defaults - MCP server 'type' field is required for discriminated unions
-        dct = params.model_dump(mode="json", by_alias=True, exclude_none=True)
-        resp = await self._conn.request_object("session/new", dct)
-        return NewSessionResponse.model_validate(resp)
+        return await self._request("session/new", params, NewSessionResponse)
 
     async def load_session(self, params: LoadSessionRequest) -> LoadSessionResponse:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
-        resp = await self._conn.request_object("session/load", dct)
-        return LoadSessionResponse.model_validate(resp)
+        return await self._request("session/load", params, LoadSessionResponse)
 
     async def list_sessions(self, params: ListSessionsRequest) -> ListSessionsResponse:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
-        resp = await self._conn.request_object("session/list", dct)
-        return ListSessionsResponse.model_validate(resp)
+        return await self._request("session/list", params, ListSessionsResponse)
 
     async def fork_session(self, params: ForkSessionRequest) -> ForkSessionResponse:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
-        resp = await self._conn.request_object("session/fork", dct)
-        return ForkSessionResponse.model_validate(resp)
+        return await self._request("session/fork", params, ForkSessionResponse)
 
     async def resume_session(self, params: ResumeSessionRequest) -> ResumeSessionResponse:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
-        resp = await self._conn.request_object("session/resume", dct)
-        return ResumeSessionResponse.model_validate(resp)
+        return await self._request("session/resume", params, ResumeSessionResponse)
 
     async def close_session(self, params: CloseSessionRequest) -> CloseSessionResponse:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
-        resp = await self._conn.request_object("session/close", dct)
-        return CloseSessionResponse.model_validate(resp)
+        return await self._request("session/close", params, CloseSessionResponse)
 
     async def set_session_mode(self, params: SetSessionModeRequest) -> SetSessionModeResponse:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
-        resp = await self._conn.request_object("session/set_mode", dct)
-        return SetSessionModeResponse.model_validate(resp)
+        return await self._request("session/set_mode", params, SetSessionModeResponse)
 
     async def delete_session(self, params: DeleteSessionRequest) -> DeleteSessionResponse:
         return await self._request("session/delete", params, DeleteSessionResponse)
@@ -215,38 +186,23 @@ class ClientSideConnection(Agent):
     async def set_session_config_option(
         self, params: SetSessionConfigOptionRequest
     ) -> SetSessionConfigOptionResponse:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
-        resp = await self._conn.request_object("session/set_config_option", dct)
-        return SetSessionConfigOptionResponse.model_validate(resp)
+        method = "session/set_config_option"
+        return await self._request(method, params, SetSessionConfigOptionResponse)
 
     async def authenticate(self, params: AuthenticateRequest) -> AuthenticateResponse:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
-        resp = await self._conn.request_object("authenticate", dct)
-        return AuthenticateResponse.model_validate(resp)
+        return await self._request("authenticate", params, AuthenticateResponse)
 
     async def logout(self, params: LogoutRequest) -> LogoutResponse:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
-        resp = await self._conn.request_object("logout", dct)
-        return LogoutResponse.model_validate(resp)
+        return await self._request("logout", params, LogoutResponse)
 
     async def prompt(self, params: PromptRequest) -> PromptResponse:
-        # Don't exclude_defaults here - the 'type' field in content blocks has a default
-        # value but is required for discriminated unions to work
         dct = params.model_dump(mode="json", by_alias=True, exclude_none=True)
         # The turn's updates, sent before the response, are handled when this returns
         resp = await self._conn.request_object("session/prompt", dct)
         return PromptResponse.model_validate(resp)
 
     async def cancel(self, params: CancelNotification) -> None:
-        dct = params.model_dump(
-            mode="json", by_alias=True, exclude_none=True, exclude_defaults=True
-        )
+        dct = params.model_dump(mode="json", by_alias=True, exclude_none=True)
         await self._conn.send_notification("session/cancel", dct)
 
     async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
