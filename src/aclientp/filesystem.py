@@ -56,11 +56,8 @@ class ACPFile(AbstractBufferedFile):  # type: ignore[misc]
     def _upload_chunk(self, final: bool = False) -> bool:
         """Upload buffered data to file (sync wrapper)."""
         if final and self.buffer:
-            content = self.buffer.getvalue()
-            if isinstance(content, bytes):
-                content = content.decode("utf-8")
-            # Run the async operation in the event loop
-            self.fs.put_file(self.path, content)
+            # Run the async operation in the event loop (`_pipe_file` decodes).
+            self.fs.pipe_file(self.path, self.buffer.getvalue())
         return True
 
 
