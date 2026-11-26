@@ -139,6 +139,31 @@ async def test_invalid_utf8_frame_does_not_stop_the_receive_loop(
     assert not conn.closed
 
 
+async def test_invalid_utf8_inside_a_json_string_skips_the_frame(
+    pair: tuple[Connection, Peer],
+) -> None:
+    """A frame that isn't UTF-8 is skipped, not delivered with U+FFFD in its strings."""
+    conn, peer = pair
+    task, request_id = await _request(conn, peer)
+    await peer.send_raw(
+        b'{"jsonrpc": "2.0", "id": %d, "result": {"text": "caf\xe9"}}\n' % request_id
+    )
+    await peer.send_raw(b'{"jsonrpc": "2.0", "id": %d, "result": {"ok": 1}}\n' % request_id)
+    assert await asyncio.wait_for(task, TIMEOUT) == {"ok": 1}
+    assert not conn.closed
+
+
+async def test_utf8_split_across_chunks_is_decoded(pair: tuple[Connection, Peer]) -> None:
+    conn, peer = pair
+    task, request_id = await _request(conn, peer)
+    message = {"jsonrpc": "2.0", "id": request_id, "result": {"t": "caf\u00e9"}}
+    frame = (anyenv.dump_json(message) + "\n").encode()
+    cut = frame.index(b"\xc3") + 1
+    await peer.send_raw(frame[:cut])
+    await peer.send_raw(frame[cut:])
+    assert await asyncio.wait_for(task, TIMEOUT) == {"t": "caf\u00e9"}
+
+
 async def test_large_frame_in_many_chunks_is_reassembled_quickly(
     pair: tuple[Connection, Peer],
 ) -> None:

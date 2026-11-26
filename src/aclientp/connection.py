@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, Literal, Self, TypeIs
 
 import anyenv
 import anyio
-from anyio.streams.text import TextReceiveStream
 from pydantic import BaseModel, ValidationError
 import structlog
 
@@ -115,9 +114,6 @@ class Connection:
         self.strict_request_ids = strict_request_ids
         self._writer = writer
         self._reader = reader
-        # Undecodable bytes become U+FFFD: the frame then fails JSON parsing and is
-        # skipped like any malformed frame, instead of killing the connection.
-        self._text_reader = TextReceiveStream(reader, errors="replace")
         self._next_request_id = 0
         self._state = state_store or InMemoryMessageStateStore()
         self._tasks = TaskSupervisor(source="acp.Connection", error_handlers=[self._on_task_error])
@@ -309,28 +305,28 @@ class Connection:
             task.cancel()
 
     async def _receive_loop(self) -> None:
-        """Read newline-delimited JSON messages using anyio TextReceiveStream.
+        """Read newline-delimited JSON messages.
 
-        This approach has no 64KB line limit unlike asyncio's readline(), and the
-        incremental decoder handles UTF-8 sequences split across chunks.
+        Frames are split on bytes, so there is no 64KB line limit (unlike asyncio's
+        readline()) and a UTF-8 sequence split across chunks stays whole.
         """
         # Parts of the incomplete frame; only new chunks are searched for newlines,
         # so a large frame is reassembled in linear time.
-        pending: list[str] = []
+        pending: list[bytes] = []
         try:
-            async for chunk in self._text_reader:
-                if "\n" not in chunk:
+            async for chunk in self._reader:
+                if b"\n" not in chunk:
                     pending.append(chunk)
                     continue
-                first, *rest = chunk.split("\n")
+                first, *rest = chunk.split(b"\n")
                 pending.append(first)
-                await self._handle_line("".join(pending))
+                await self._handle_frame(b"".join(pending))
                 *complete, last = rest
-                for line in complete:
-                    await self._handle_line(line)
+                for frame in complete:
+                    await self._handle_frame(frame)
                 pending = [last] if last else []
             # A final frame without trailing newline
-            await self._handle_line("".join(pending))
+            await self._handle_frame(b"".join(pending))
         except asyncio.CancelledError:
             return
         except anyio.ClosedResourceError, anyio.BrokenResourceError, anyio.EndOfStream:
@@ -338,6 +334,18 @@ class Connection:
         # EOF / closed: reject in-flight requests so callers get an error
         # instead of hanging forever (e.g. subprocess crash during initialize).
         self._disconnect(ConnectionError("Connection closed: remote end sent EOF"))
+
+    async def _handle_frame(self, frame: bytes) -> None:
+        try:
+            line = frame.decode()
+        except UnicodeDecodeError:
+            # Skipped like any malformed frame (replacing the bytes would deliver
+            # corrupted strings), instead of killing the connection.
+            logger.warning(
+                "Skipping JSON-RPC frame that is not UTF-8", line=repr(frame[:_LOG_LINE_LIMIT])
+            )
+            return
+        await self._handle_line(line)
 
     async def _handle_line(self, line: str) -> None:
         if self.reject_batches and _is_batch(line):
