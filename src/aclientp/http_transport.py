@@ -12,6 +12,12 @@ like the TypeScript SDK's ``createHttpStream`` (``@agentclientprotocol/sdk/exper
   (``Acp-Session-Id``), opened as soon as a response names the session.
 - ``DELETE /acp`` ends the connection on close. Cookies are kept for the connection.
 
+POSTs are sent one at a time, each after the previous one was answered (``_PostWriter``
+awaits each in the connection's writer task). That is deliberate: the server sees messages
+in the order the client wrote them (e.g. a ``session/cancel`` after the prompt it cancels,
+a permission answer before a later request). The cost is that a slow POST delays the
+messages behind it, for at most the client's timeout (30 s by default).
+
 The transport is exposed as a pair of byte streams carrying newline-delimited JSON-RPC,
 like stdio, so any connection (or a stdio relay) can use it unchanged.
 
@@ -437,7 +443,11 @@ class _InboxReader(ByteReceiveStream):
 
 
 class _PostWriter(ByteSendStream):
-    """Splits the newline-delimited JSON written by a connection into POSTs."""
+    """Splits the newline-delimited JSON written by a connection into POSTs.
+
+    One POST at a time, in write order (see the module docstring): not parallelized on
+    purpose, so the server receives messages in the order they were sent.
+    """
 
     def __init__(self, connection: _HttpConnection) -> None:
         self._connection = connection

@@ -150,6 +150,11 @@ async with connect_remote_transport(url, headers={"X-API-Key": key}) as (reader,
     await conn.initialize(InitializeRequest(protocol_version=1))
 ```
 
+Over Streamable HTTP each outgoing message is one POST, sent after the previous one was
+answered, so the agent receives messages in the order they were written (a `session/cancel`
+never overtakes its prompt). A slow POST delays the ones behind it, for at most the
+`timeout` (30 s by default).
+
 Serving an agent the same way (Streamable HTTP and WebSocket on one endpoint, compatible
 with the TypeScript SDK's experimental clients):
 
