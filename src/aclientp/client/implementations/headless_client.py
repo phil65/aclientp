@@ -7,6 +7,7 @@ making it ideal for testing and standalone usage.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 import uuid
@@ -111,7 +112,8 @@ class HeadlessACPClient(Client):
         if not path.exists():
             raise FileNotFoundError(f"File not found: {params.path}")
         try:
-            content = path.read_text(encoding="utf-8")
+            # In a thread: the loop also runs the connection (and concurrent requests).
+            content = await asyncio.to_thread(path.read_text, encoding="utf-8")
             # Apply line filtering if requested
             if params.line is not None or params.limit is not None:
                 lines = content.splitlines(keepends=True)
@@ -132,7 +134,7 @@ class HeadlessACPClient(Client):
         path = Path(params.path)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(params.content, encoding="utf-8")
+            await asyncio.to_thread(path.write_text, params.content, encoding="utf-8")
             logger.debug("Wrote file", path=params.path, num_chars=len(params.content))
             return WriteTextFileResponse()
         except Exception:

@@ -60,3 +60,36 @@ async def test_complete_binary_read(tmp_path: Path) -> None:
         assert await fs._cat_file(str(target)) == data
     finally:
         await client.cleanup()
+
+
+async def test_headless_client_file_io_runs_in_a_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pathlib
+    import threading
+
+    from aclientp.schema import ReadTextFileRequest, WriteTextFileRequest
+
+    threads: list[int] = []
+    real_read, real_write = pathlib.Path.read_text, pathlib.Path.write_text
+
+    def read_text(self: pathlib.Path, *args: object, **kwargs: object) -> str:
+        threads.append(threading.get_ident())
+        return real_read(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    def write_text(self: pathlib.Path, *args: object, **kwargs: object) -> int:
+        threads.append(threading.get_ident())
+        return real_write(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    monkeypatch.setattr(pathlib.Path, "write_text", write_text)
+    client = HeadlessACPClient(
+        working_dir=tmp_path, allow_file_operations=True, auto_grant_permissions=True
+    )
+    target = str(tmp_path / "f.txt")
+    await client.write_text_file(WriteTextFileRequest(session_id="s", path=target, content="hi"))
+    response = await client.read_text_file(ReadTextFileRequest(session_id="s", path=target))
+    await client.cleanup()
+    assert response.content == "hi"
+    assert threads
+    assert threading.get_ident() not in threads
