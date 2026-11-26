@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 import logging
 import os
+import re
 import subprocess
 from typing import TYPE_CHECKING, Any, Literal, assert_never
 
@@ -38,6 +39,10 @@ if TYPE_CHECKING:
     from aclientp.v2.agent import Agent as V2Agent, AgentSideConnection as V2AgentSideConnection
 
 logger = logging.getLogger(__name__)
+
+MAX_STDERR_LINE_BYTES = 64 * 1024
+"""A partial stderr line longer than this is passed on without waiting for its end."""
+_LINE_BREAK = re.compile(rb"\r\n?|\n")
 
 
 # =============================================================================
@@ -550,7 +555,8 @@ async def _drain_stderr_to_log(
     if process.stderr is None:
         return
 
-    buffer = b""
+    pending = bytearray()
+    after_cr = False
 
     def emit(raw: bytes) -> None:
         line = raw.decode(errors="replace").rstrip("\r\n")
@@ -563,18 +569,28 @@ async def _drain_stderr_to_log(
                 logger.exception("stderr callback failed for %s", command)
 
     try:
-        # Chunks are not lines: split them, and keep a partial last line for later.
-        async for chunk in process.stderr:
-            buffer += chunk
-            *lines, buffer = buffer.split(b"\n")
-            for raw in lines:
-                emit(raw)
+        # Chunks are not lines: split them (on \n, \r\n and the \r of progress
+        # output), keeping a partial last line for later. Only the new chunk is
+        # searched, and a partial line is flushed once it exceeds the cap.
+        async for data in process.stderr:
+            chunk = data[1:] if after_cr and data.startswith(b"\n") else data
+            after_cr = chunk.endswith(b"\r")
+            *lines, rest = _LINE_BREAK.split(chunk)
+            if lines:
+                lines[0] = bytes(pending) + lines[0]
+                pending.clear()
+                for raw in lines:
+                    emit(raw)
+            pending += rest
+            if len(pending) > MAX_STDERR_LINE_BYTES:
+                emit(bytes(pending))
+                pending.clear()
     except anyio.EndOfStream:
         pass
     except Exception:
         logger.debug("Error reading stderr from %s", command, exc_info=True)
-    if buffer:
-        emit(buffer)
+    if pending:
+        emit(bytes(pending))
 
 
 @asynccontextmanager

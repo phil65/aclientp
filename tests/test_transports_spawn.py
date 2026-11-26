@@ -66,3 +66,29 @@ async def test_spawned_agent_is_stopped_when_the_caller_is_cancelled() -> None:
         async with spawned as (_conn, process):
             await anyio.sleep(30)
     assert process.returncode is not None
+
+
+async def test_stderr_progress_with_carriage_returns_is_split_into_lines() -> None:
+    script = (
+        "import sys\n"
+        "for i in range(3):\n"
+        "    sys.stderr.write(f'progress {i}\\r'); sys.stderr.flush()\n"
+        "sys.stderr.write('done\\r\\nnext\\n'); sys.stderr.flush()\n"
+        "sys.stdin.read()\n"
+    )
+    lines: list[str] = []
+    async with spawn_stdio_transport(sys.executable, "-c", script, on_stderr=lines.append):
+        pass
+    assert lines == ["progress 0", "progress 1", "progress 2", "done", "next"]
+
+
+async def test_stderr_partial_line_is_bounded() -> None:
+    from aclientp.transports import MAX_STDERR_LINE_BYTES
+
+    size = MAX_STDERR_LINE_BYTES * 3
+    script = f"import sys; sys.stderr.write('x' * {size}); sys.stderr.flush(); sys.stdin.read()"
+    lines: list[str] = []
+    async with spawn_stdio_transport(sys.executable, "-c", script, on_stderr=lines.append):
+        await anyio.sleep(0.5)
+    assert sum(len(line) for line in lines) == size
+    assert all(len(line) <= MAX_STDERR_LINE_BYTES * 2 for line in lines)
