@@ -44,13 +44,16 @@ async def test_unread_stderr_is_drained_so_the_agent_never_blocks() -> None:
 
 async def test_child_is_stopped_when_the_caller_is_cancelled() -> None:
     script = "import time; time.sleep(30)"
-    with anyio.move_on_after(0.5):
+    # The deadline starts inside the block: a slow spawn must not cancel __aenter__.
+    with anyio.CancelScope() as scope:
         async with spawn_stdio_transport(sys.executable, "-c", script, shutdown_timeout=0.5) as (
             _r,
             _w,
             process,
         ):
+            scope.deadline = anyio.current_time() + 0.2
             await anyio.sleep(30)
+    assert scope.cancelled_caught
     assert process.returncode is not None
 
 
@@ -60,9 +63,11 @@ async def test_spawned_agent_is_stopped_when_the_caller_is_cancelled() -> None:
 
     script = "import time; time.sleep(30)"
     spawned = spawn_agent_process(lambda _agent: NoOpClient(), sys.executable, "-c", script)
-    with anyio.move_on_after(0.5):
+    with anyio.CancelScope() as scope:
         async with spawned as (_conn, process):
+            scope.deadline = anyio.current_time() + 0.2
             await anyio.sleep(30)
+    assert scope.cancelled_caught
     assert process.returncode is not None
 
 
