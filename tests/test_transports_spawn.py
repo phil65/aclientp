@@ -70,10 +70,12 @@ async def test_spawned_agent_is_stopped_when_the_caller_is_cancelled() -> None:
 
 async def test_stderr_progress_with_carriage_returns_is_split_into_lines() -> None:
     script = (
+        # Bytes: text-mode stderr would translate \n to \r\n on Windows.
         "import sys\n"
+        "err = sys.stderr.buffer\n"
         "for i in range(3):\n"
-        "    sys.stderr.write(f'progress {i}\\r'); sys.stderr.flush()\n"
-        "sys.stderr.write('done\\r\\nnext\\n'); sys.stderr.flush()\n"
+        "    err.write(f'progress {i}\\r'.encode()); err.flush()\n"
+        "err.write(b'done\\r\\nnext\\n'); err.flush()\n"
         "sys.stdin.read()\n"
     )
     lines: list[str] = []
