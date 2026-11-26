@@ -38,6 +38,10 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
+class OutputTruncatedError(RuntimeError):
+    """A command's output was cut by the client's output byte limit."""
+
+
 class ACPRequests:
     """Clean API for creating and sending ACP session requests.
 
@@ -188,6 +192,7 @@ class ACPRequests:
         output_byte_limit: int | None = None,
         timeout_seconds: int | None = None,
         metadata: dict[str, str] | None = None,
+        fail_on_truncation: bool = False,
     ) -> tuple[str, int | None]:
         """Execute a shell command and return output and exit code.
 
@@ -202,9 +207,14 @@ class ACPRequests:
             output_byte_limit: Maximum bytes to capture from output
             timeout_seconds: Command timeout in seconds
             metadata: Metadata for the requests
+            fail_on_truncation: Raise if the client cut the output (its byte limit),
+                instead of returning the shortened output
 
         Returns:
             Tuple of (output, exit_code)
+
+        Raises:
+            OutputTruncatedError: With `fail_on_truncation`, if the output was truncated
         """
         terminal_handle = await self.create_terminal(
             command=command,
@@ -229,6 +239,9 @@ class ACPRequests:
                 exit_result = await self.wait_for_terminal_exit(terminal_id, metadata=metadata)
 
             output_response = await self.terminal_output(terminal_id, metadata=metadata)
+            if fail_on_truncation and output_response.truncated:
+                msg = f"Output of {command!r} was truncated by the client"
+                raise OutputTruncatedError(msg)
             return output_response.output, exit_result.exit_code
 
         finally:  # Always release terminal

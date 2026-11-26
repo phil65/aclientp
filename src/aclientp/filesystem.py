@@ -31,6 +31,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+MAX_COMMAND_OUTPUT_BYTES = 64 * 1024 * 1024
+"""Output limit asked for commands whose output must be complete (binary reads, listings).
+
+Clients may cap terminal output; truncated output is an error, not a shorter result.
+"""
+
 
 class ACPFile(AbstractBufferedFile):  # type: ignore[misc]
     """File-like object for ACP filesystem operations."""
@@ -136,7 +142,12 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         try:
             b64_cmd = self.command_provider.get_command("base64_encode")
             cmd_str = b64_cmd.create_command(path)
-            output, exit_code = await self.requests.run_command(cmd_str, timeout_seconds=30)
+            output, exit_code = await self.requests.run_command(
+                cmd_str,
+                timeout_seconds=30,
+                output_byte_limit=MAX_COMMAND_OUTPUT_BYTES,
+                fail_on_truncation=True,
+            )
 
             if exit_code != 0:
                 raise FileNotFoundError(f"Could not read binary file {path}: {output}")  # noqa: TRY301
@@ -216,7 +227,12 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         ls_cmd = list_cmd.create_command(path)
 
         try:
-            output, exit_code = await self.requests.run_command(ls_cmd, timeout_seconds=10)
+            output, exit_code = await self.requests.run_command(
+                ls_cmd,
+                timeout_seconds=10,
+                output_byte_limit=MAX_COMMAND_OUTPUT_BYTES,
+                fail_on_truncation=True,
+            )
 
             if exit_code != 0:
                 raise FileNotFoundError(f"Error listing directory {path!r}: {output}")  # noqa: TRY301
@@ -497,7 +513,12 @@ class ACPFileSystem(BaseAsyncFileSystem[ACPPath, AcpInfo]):
         )
 
         try:
-            output, exit_code = await self.requests.run_command(cmd_str, timeout_seconds=60)
+            output, exit_code = await self.requests.run_command(
+                cmd_str,
+                timeout_seconds=60,
+                output_byte_limit=MAX_COMMAND_OUTPUT_BYTES,
+                fail_on_truncation=True,
+            )
 
             if exit_code != 0:
                 # If find fails, fall back to default implementation
