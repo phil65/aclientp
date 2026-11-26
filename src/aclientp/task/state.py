@@ -50,11 +50,22 @@ class MessageStateStore(Protocol):
 
 
 class InMemoryMessageStateStore(MessageStateStore):
-    """In-memory implementation of MessageStateStore."""
+    """In-memory implementation of MessageStateStore.
+
+    Keeps incoming requests only while they are handled: a finished request (with
+    its params and result, e.g. a whole file's content) is dropped. Subclasses that
+    want a history keep their own (`DebuggingMessageStateStore`).
+    """
 
     def __init__(self) -> None:
         self._outgoing: dict[int, OutgoingMessage] = {}
-        self._incoming: list[IncomingMessage] = []
+        # Keyed by id(): records are mutable dataclasses (not hashable).
+        self._incoming: dict[int, IncomingMessage] = {}
+
+    @property
+    def pending_incoming(self) -> list[IncomingMessage]:
+        """Incoming requests that are still being handled, oldest first."""
+        return list(self._incoming.values())
 
     def register_outgoing(self, request_id: int, method: str) -> asyncio.Future[Any]:
         future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
@@ -79,13 +90,15 @@ class InMemoryMessageStateStore(MessageStateStore):
 
     def begin_incoming(self, method: str, params: Any) -> IncomingMessage:
         record = IncomingMessage(method=method, params=params)
-        self._incoming.append(record)
+        self._incoming[id(record)] = record
         return record
 
     def complete_incoming(self, record: IncomingMessage, result: Any) -> None:
+        self._incoming.pop(id(record), None)
         record.status = "completed"
         record.result = result
 
     def fail_incoming(self, record: IncomingMessage, error: Exception) -> None:
+        self._incoming.pop(id(record), None)
         record.status = "failed"
         record.error = error
