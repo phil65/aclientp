@@ -271,14 +271,15 @@ async def serve(
 async def _run_until_closed(
     conn: AgentSideConnection | RoutedAgentConnection, shutdown_event: asyncio.Event | None
 ) -> None:
-    """Keep the connection open until the peer disconnects, shutdown is signalled or cancelled."""
+    """Keep the connection open until the peer disconnects, shutdown is signalled or cancelled.
+
+    Cancellation closes the connection and propagates.
+    """
     waiters: set[asyncio.Task[Any]] = {asyncio.create_task(conn.wait_closed())}
     if shutdown_event is not None:
         waiters.add(asyncio.create_task(shutdown_event.wait()))
     try:
         await asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED)
-    except asyncio.CancelledError:
-        pass
     finally:
         for waiter in waiters:
             waiter.cancel()

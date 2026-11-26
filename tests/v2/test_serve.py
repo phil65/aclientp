@@ -6,6 +6,8 @@ import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
+import pytest
+
 from aclientp.agent.implementations.testing import TestAgent as V1TestAgent
 from aclientp.transports import StreamTransport, serve
 from tests.streams import TIMEOUT, make_streams
@@ -104,3 +106,20 @@ async def test_serve_needs_an_agent() -> None:
         return
     msg = "serve() accepted no agent"
     raise AssertionError(msg)
+
+
+async def test_serve_propagates_cancellation() -> None:
+    writer, reader, _peer = make_streams()
+    run = serve(V1TestAgent(), StreamTransport(reader=reader, writer=writer))
+    task = asyncio.create_task(run)
+    await asyncio.sleep(0.1)
+    task.cancel()
+    await asyncio.wait({task}, timeout=TIMEOUT)
+    assert task.cancelled()
+
+
+async def test_serve_under_timeout_raises_timeout_error() -> None:
+    writer, reader, _peer = make_streams()
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.2):
+            await serve(V1TestAgent(), StreamTransport(reader=reader, writer=writer))
