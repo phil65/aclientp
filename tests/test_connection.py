@@ -7,6 +7,7 @@ controls exactly what goes over the wire.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Any
 
 import anyenv
@@ -127,6 +128,35 @@ async def test_frame_split_across_chunks_and_multibyte_characters(
     await peer.send_raw(data[:split])
     await peer.send_raw(data[split:])
     assert await asyncio.wait_for(task, TIMEOUT) == {"t": "ü€"}
+
+
+async def test_invalid_utf8_frame_does_not_stop_the_receive_loop(
+    pair: tuple[Connection, Peer],
+) -> None:
+    conn, peer = pair
+    await peer.send_raw(b"\xff\xfe garbage\n")
+    task, request_id = await _request(conn, peer)
+    await peer.send_raw(b'{"jsonrpc": "2.0", "id": %d, "result": {"ok": 1}}\n' % request_id)
+    assert await asyncio.wait_for(task, TIMEOUT) == {"ok": 1}
+    assert not conn.closed
+
+
+async def test_large_frame_in_many_chunks_is_reassembled_quickly(
+    pair: tuple[Connection, Peer],
+) -> None:
+    conn, peer = pair
+    task, request_id = await _request(conn, peer)
+    blob = "x" * (32 * 1024 * 1024)
+    frame = anyenv.dump_json({"jsonrpc": "2.0", "id": request_id, "result": {"b": blob}}) + "\n"
+    data = frame.encode()
+    chunk = 65536
+    start = time.perf_counter()
+    for i in range(0, len(data), chunk):
+        await peer.send_raw(data[i : i + chunk])
+    result = await asyncio.wait_for(task, 10)
+    elapsed = time.perf_counter() - start
+    assert len(result["b"]) == len(blob)
+    assert elapsed < 3, elapsed  # quadratic reassembly: ~4 s for 32 MB
 
 
 async def test_final_frame_without_newline_is_processed() -> None:

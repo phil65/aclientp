@@ -117,7 +117,9 @@ class Connection:
         self.strict_request_ids = strict_request_ids
         self._writer = writer
         self._reader = reader
-        self._text_reader = TextReceiveStream(reader)
+        # Undecodable bytes become U+FFFD: the frame then fails JSON parsing and is
+        # skipped like any malformed frame, instead of killing the connection.
+        self._text_reader = TextReceiveStream(reader, errors="replace")
         self._next_request_id = 0
         self._state = state_store or InMemoryMessageStateStore()
         self._tasks = TaskSupervisor(source="acp.Connection", error_handlers=[self._on_task_error])
@@ -314,15 +316,23 @@ class Connection:
         This approach has no 64KB line limit unlike asyncio's readline(), and the
         incremental decoder handles UTF-8 sequences split across chunks.
         """
-        buffer = ""
+        # Parts of the incomplete frame; only new chunks are searched for newlines,
+        # so a large frame is reassembled in linear time.
+        pending: list[str] = []
         try:
             async for chunk in self._text_reader:
-                lines = (buffer + chunk).split("\n")
-                buffer = lines.pop()  # Keep incomplete line in buffer
-                for line in lines:
+                if "\n" not in chunk:
+                    pending.append(chunk)
+                    continue
+                first, *rest = chunk.split("\n")
+                pending.append(first)
+                await self._handle_line("".join(pending))
+                *complete, last = rest
+                for line in complete:
                     await self._handle_line(line)
+                pending = [last] if last else []
             # A final frame without trailing newline
-            await self._handle_line(buffer)
+            await self._handle_line("".join(pending))
         except asyncio.CancelledError:
             return
         except anyio.ClosedResourceError, anyio.BrokenResourceError, anyio.EndOfStream:
