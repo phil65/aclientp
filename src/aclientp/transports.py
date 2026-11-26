@@ -639,15 +639,19 @@ async def spawn_stdio_transport(
     try:
         yield process.stdout, process.stdin, process
     finally:
-        await _shutdown_process(process, shutdown_timeout)
-        # The process is gone: read what is left of stderr (e.g. a crash message)
-        # before stopping the reader.
-        if stderr_task is not None:
-            with contextlib.suppress(TimeoutError, asyncio.CancelledError):
-                await asyncio.wait_for(asyncio.shield(stderr_task), shutdown_timeout)
-            stderr_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await stderr_task
+        # Shielded: in a cancelled anyio scope every await would be cancelled at once
+        # (level-triggered) and the child would keep running. Each await is bounded
+        # by shutdown_timeout.
+        with anyio.CancelScope(shield=True):
+            await _shutdown_process(process, shutdown_timeout)
+            # The process is gone: read what is left of stderr (e.g. a crash message)
+            # before stopping the reader.
+            if stderr_task is not None:
+                with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+                    await asyncio.wait_for(asyncio.shield(stderr_task), shutdown_timeout)
+                stderr_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await stderr_task
 
 
 async def _shutdown_process(process: Process, shutdown_timeout: float) -> None:

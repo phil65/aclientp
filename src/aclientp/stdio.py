@@ -151,7 +151,8 @@ async def spawn_stdio_connection(
         try:
             yield conn, process
         finally:
-            await conn.close()
+            with anyio.CancelScope(shield=True):  # see spawn_stdio_transport
+                await conn.close()
 
 
 @asynccontextmanager
@@ -186,7 +187,8 @@ async def spawn_agent_process(
         try:
             yield conn, process
         finally:
-            await conn.close()
+            with anyio.CancelScope(shield=True):  # see spawn_stdio_transport
+                await conn.close()
 
 
 @asynccontextmanager
@@ -221,7 +223,8 @@ async def spawn_client_process(
         try:
             yield conn, process
         finally:
-            await conn.close()
+            with anyio.CancelScope(shield=True):  # see spawn_stdio_transport
+                await conn.close()
 
 
 async def run_agent(

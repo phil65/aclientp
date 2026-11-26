@@ -42,3 +42,27 @@ async def test_unread_stderr_is_drained_so_the_agent_never_blocks() -> None:
         async with spawn_stdio_transport(sys.executable, "-c", script) as (_r, _w, process):
             await anyio.sleep(0.5)
     assert process.returncode == 0
+
+
+async def test_child_is_stopped_when_the_caller_is_cancelled() -> None:
+    script = "import time; time.sleep(30)"
+    with anyio.move_on_after(0.5):
+        async with spawn_stdio_transport(sys.executable, "-c", script, shutdown_timeout=0.5) as (
+            _r,
+            _w,
+            process,
+        ):
+            await anyio.sleep(30)
+    assert process.returncode is not None
+
+
+async def test_spawned_agent_is_stopped_when_the_caller_is_cancelled() -> None:
+    from aclientp.client.implementations.noop_client import NoOpClient
+    from aclientp.stdio import spawn_agent_process
+
+    script = "import time; time.sleep(30)"
+    spawned = spawn_agent_process(lambda _agent: NoOpClient(), sys.executable, "-c", script)
+    with anyio.move_on_after(0.5):
+        async with spawned as (_conn, process):
+            await anyio.sleep(30)
+    assert process.returncode is not None
