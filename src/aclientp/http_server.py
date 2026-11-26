@@ -370,6 +370,8 @@ class AcpHttpServer:
     max_output_stall: float = DEFAULT_MAX_OUTPUT_STALL_SECONDS
     """Seconds a client may take nothing while over the limit before it is dropped."""
     connections: dict[str, _Connection] = field(default_factory=dict)
+    _background: set[asyncio.Task[None]] = field(default_factory=set, init=False, repr=False)
+    """Removals started from sync callbacks; referenced so they aren't garbage-collected."""
 
     def app(self) -> Starlette:
         """The Starlette application."""
@@ -407,6 +409,9 @@ class AcpHttpServer:
         """End all connections."""
         for connection in list(self.connections.values()):
             await self._remove(connection)
+        for task in list(self._background):
+            task.cancel()
+        await asyncio.gather(*self._background, return_exceptions=True)
 
     # --- connections ------------------------------------------------------------------
 
@@ -430,7 +435,9 @@ class AcpHttpServer:
                 connection.connection_id,
                 self.max_output_stall,
             )
-            asyncio.get_running_loop().create_task(self._remove(connection))
+            task = asyncio.get_running_loop().create_task(self._remove(connection))
+            self._background.add(task)
+            task.add_done_callback(self._background.discard)
 
         return _AgentOutput(deliver, connection.backlog, on_stall)
 
