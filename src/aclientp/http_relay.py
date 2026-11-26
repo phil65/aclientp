@@ -13,8 +13,6 @@ the client's agent environment instead of its arguments. stdout carries protocol
 messages only; diagnostics go to stderr.
 """
 
-from __future__ import annotations
-
 import argparse
 import contextlib
 import logging

@@ -6,8 +6,6 @@ subprocess; messages are relayed unchanged in both directions, so session update
 agent requests (permissions, file access) reach the client.
 """
 
-from __future__ import annotations
-
 import contextlib
 from dataclasses import dataclass, field
 import logging

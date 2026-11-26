@@ -1,7 +1,5 @@
 """ACP Agent API for simplified client-to-agent interactions."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 

@@ -1,7 +1,5 @@
 """Test fixtures for ACP tests."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 from aclientp import Agent

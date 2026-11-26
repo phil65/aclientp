@@ -1,7 +1,5 @@
 """Session state schema definitions."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from typing import Annotated, Literal, Self
 

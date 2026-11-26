@@ -5,8 +5,6 @@ filesystem operations and uses ProcessManager for real terminal execution,
 making it ideal for testing and standalone usage.
 """
 
-from __future__ import annotations
-
 import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, Any

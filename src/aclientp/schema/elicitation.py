@@ -4,8 +4,6 @@ Defines types for agent-initiated elicitation, where the agent requests
 structured input from the user via forms or URLs.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from typing import Annotated, Any, Literal, Self
 

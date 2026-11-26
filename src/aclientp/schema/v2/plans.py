@@ -1,7 +1,5 @@
 """v2 plans: item-based ``plan_update`` and ``plan_removed`` keyed by plan ID."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Literal
 

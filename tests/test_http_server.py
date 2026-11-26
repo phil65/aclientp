@@ -1,7 +1,5 @@
 """Streamable HTTP & WebSocket server, served by uvicorn and used by real clients."""
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import socket

@@ -1,7 +1,5 @@
 """Tool call schema definitions."""
 
-from __future__ import annotations
-
 import base64
 from collections.abc import Sequence  # noqa: TC003
 from typing import TYPE_CHECKING, Any, Literal, Self

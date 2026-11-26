@@ -8,8 +8,6 @@ initialization rules and offers typed calls to the client.
 Mirrors the agent bindings of the pinned TypeScript SDK (``schema/references.toml``).
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ValidationError

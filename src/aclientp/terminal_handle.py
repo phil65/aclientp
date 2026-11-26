@@ -1,7 +1,5 @@
 """Terminal handle implementation. NOTE: not integrated yet."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 

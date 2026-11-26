@@ -1,7 +1,5 @@
 """In-memory byte streams and a raw-frame peer for connection tests."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 import anyenv

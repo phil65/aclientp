@@ -1,7 +1,5 @@
 """Agent ACP Connection."""
 
-from __future__ import annotations
-
 from functools import partial
 from typing import TYPE_CHECKING, Any, Self
 
@@ -13,6 +11,8 @@ from aclientp.client.protocol import Client
 from aclientp.connection import Connection, MethodHandler
 from aclientp.exceptions import RequestError
 from aclientp.schema import (
+    AgentMethod,
+    AgentResponse,
     ArchiveSessionRequest,
     AuthenticateRequest,
     AuthStatusRequest,
@@ -70,8 +70,6 @@ if TYPE_CHECKING:
 
     from aclientp.connection import StreamObserver
     from aclientp.schema import (
-        AgentMethod,
-        AgentResponse,
         AuthStatusUpdateNotification,
         CreateTerminalRequest,
         KillTerminalRequest,

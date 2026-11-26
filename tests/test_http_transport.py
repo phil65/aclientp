@@ -1,7 +1,5 @@
 """Streamable HTTP client transport, against an in-process fake of the RFD's server side."""
 
-from __future__ import annotations
-
 import asyncio
 from dataclasses import dataclass, field
 from typing import Any

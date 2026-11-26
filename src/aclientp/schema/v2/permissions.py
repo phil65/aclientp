@@ -4,8 +4,6 @@ v2 permission requests carry a required ``title`` and an optional ``subject``: a
 call (with the same payload as a ``tool_call_update``) or a command.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Literal
 

@@ -9,8 +9,6 @@ v2 does not use JSON-RPC batches: each transport message is a single request,
 notification or response, and receivers reject an array with ``-32600``.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any, Literal
 

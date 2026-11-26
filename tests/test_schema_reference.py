@@ -1,8 +1,6 @@
 """Tests for the pinned upstream schema references and the conformance check."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Annotated, Any, ForwardRef, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import MISSING, BaseModel, Field, StringConstraints, model_validator
 import pytest
@@ -334,11 +332,12 @@ def test_forward_references_are_resolved() -> None:
     class Holder(BaseModel):
         items: list[DefinedLater] | None = None  # type: ignore[name-defined]  # noqa: F821
 
-    assert isinstance(Holder.model_fields["items"].annotation, ForwardRef)  # unresolved yet
+    assert not Holder.__pydantic_complete__  # unresolved yet
     globals()["DefinedLater"] = int
 
     fields = wire_fields(Holder)
 
+    assert Holder.__pydantic_complete__
     assert fields["items"].accepts_none
 
 

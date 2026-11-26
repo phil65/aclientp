@@ -1,7 +1,5 @@
 """InMemoryMessageStateStore keeps only what is in flight."""
 
-from __future__ import annotations
-
 from aclientp import RequestError
 from aclientp.task.state import InMemoryMessageStateStore
 

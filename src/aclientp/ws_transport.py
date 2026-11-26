@@ -10,8 +10,6 @@ byte streams carrying newline-delimited JSON-RPC. :func:`connect_remote_transpor
 the transport from the URL scheme.
 """
 
-from __future__ import annotations
-
 from contextlib import asynccontextmanager
 import logging
 from typing import TYPE_CHECKING

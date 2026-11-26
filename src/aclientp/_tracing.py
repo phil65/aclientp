@@ -1,7 +1,5 @@
 """Optional tracing: spans via logfire when it is installed, no-ops otherwise."""
 
-from __future__ import annotations
-
 import importlib.util
 from typing import TYPE_CHECKING, LiteralString
 

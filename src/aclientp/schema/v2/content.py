@@ -1,7 +1,5 @@
 """v2 content blocks: text, media, resources and skill references."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Literal
 

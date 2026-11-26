@@ -4,8 +4,6 @@ The peer is driven with raw NDJSON frames over in-memory streams, so every test
 controls exactly what goes over the wire.
 """
 
-from __future__ import annotations
-
 import asyncio
 import time
 from typing import TYPE_CHECKING, Any

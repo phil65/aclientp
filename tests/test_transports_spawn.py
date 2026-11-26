@@ -1,7 +1,5 @@
 """Spawning stdio agents with `spawn_stdio_transport`."""
 
-from __future__ import annotations
-
 import sys
 
 import anyio

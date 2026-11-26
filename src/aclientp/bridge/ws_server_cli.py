@@ -5,8 +5,6 @@ Usage:
     python -m aclientp.bridge.ws_server_cli --port 8765 -- uv run agentpool serve-acp
 """
 
-from __future__ import annotations
-
 import argparse
 import contextlib
 import logging

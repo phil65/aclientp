@@ -4,8 +4,6 @@ This module provides a basic client implementation for the Agent Client Protocol
 that can be used for testing or as a base for more sophisticated client implementations.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 

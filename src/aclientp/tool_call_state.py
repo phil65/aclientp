@@ -4,8 +4,6 @@ This module provides a simple state tracker for tool calls that sends
 only changed fields in updates, following the ACP protocol spec.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 

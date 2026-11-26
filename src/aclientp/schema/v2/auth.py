@@ -4,8 +4,6 @@ An agent that returns a non-empty ``authMethods`` list in ``initialize`` MUST im
 ``auth/login`` and ``auth/logout``; otherwise clients MUST NOT call them.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Literal
 

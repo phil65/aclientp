@@ -1,7 +1,5 @@
 """Shared fixtures."""
 
-from __future__ import annotations
-
 import pytest
 
 from aclientp.agent.implementations.testing import TestAgent

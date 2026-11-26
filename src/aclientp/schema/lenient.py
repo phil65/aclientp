@@ -20,8 +20,6 @@ Model instances are never replaced or dropped: an invalid one was built by local
 ``schema_reference check`` compares the markers with the schema's annotations.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import inspect

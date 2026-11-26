@@ -4,8 +4,6 @@ v2 has no dedicated modes or model selector API: agents expose such state as con
 options (``category: "mode"`` / ``"model"``).
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from typing import Annotated, Any, Literal
 

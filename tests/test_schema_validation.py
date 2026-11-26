@@ -1,7 +1,5 @@
 """Validation rules of the v1 models that go beyond the field types."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError

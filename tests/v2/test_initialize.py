@@ -1,7 +1,5 @@
 """Tests for v2 initialize, capabilities and auth models."""
 
-from __future__ import annotations
-
 from pydantic import MISSING
 
 from aclientp.schema.v2.auth import AuthMethodAgent, AuthMethodTerminal, UnknownAuthMethod

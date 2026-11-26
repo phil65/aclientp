@@ -1,7 +1,5 @@
 """Tests for the v2 JSON-RPC layer: method tables and envelopes."""
 
-from __future__ import annotations
-
 from typing import get_args
 
 from pydantic import TypeAdapter

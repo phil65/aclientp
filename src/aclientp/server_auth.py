@@ -18,8 +18,6 @@ Browsers cannot set headers on a WebSocket; browser clients use the Streamable H
 transport, whose ``fetch`` requests can.
 """
 
-from __future__ import annotations
-
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 import hmac
 import ipaddress

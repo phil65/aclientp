@@ -4,8 +4,6 @@ For uvx/npx distributions the command is built directly.
 For binary distributions the archive is downloaded and extracted if needed.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from pathlib import Path

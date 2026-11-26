@@ -8,8 +8,6 @@ and offers typed calls for every agent method.
 Mirrors the client bindings of the pinned TypeScript SDK (``schema/references.toml``).
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError

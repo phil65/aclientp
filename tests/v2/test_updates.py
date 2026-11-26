@@ -1,7 +1,5 @@
 """Tests for v2 session updates: messages, tool calls, terminals, plans and state."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from pydantic import MISSING, BaseModel, TypeAdapter

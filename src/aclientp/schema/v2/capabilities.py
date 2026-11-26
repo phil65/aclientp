@@ -5,8 +5,6 @@ supported. Capabilities of individual objects (tool calls, terminals, cursors,
 subagent sessions) live with those objects.
 """
 
-from __future__ import annotations
-
 from pydantic import MISSING
 from pydantic.alias_generators import to_snake
 

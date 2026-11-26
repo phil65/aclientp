@@ -1,7 +1,5 @@
 """The stall handler's removal task is kept referenced and awaited on close."""
 
-from __future__ import annotations
-
 import asyncio
 
 from aclientp.http_server import AcpHttpServer

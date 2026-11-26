@@ -1,7 +1,5 @@
 """Tests for v2 wire rules and content blocks."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from pydantic import MISSING, BaseModel, TypeAdapter, ValidationError

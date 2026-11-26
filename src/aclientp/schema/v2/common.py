@@ -1,7 +1,5 @@
 """Shared v2 types: identifiers, errors, implementation info, usage and annotations."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Any, Literal
 

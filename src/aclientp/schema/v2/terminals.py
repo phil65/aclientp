@@ -7,8 +7,6 @@ independently base64-encoded bytes. Clients cannot execute or control processes,
 except cancelling terminals that allow it.
 """
 
-from __future__ import annotations
-
 import base64
 from typing import Literal, Self
 

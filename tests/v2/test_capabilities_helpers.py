@@ -1,7 +1,5 @@
 """``supports()``: capability markers by dotted wire path."""
 
-from __future__ import annotations
-
 from aclientp.schema.v2 import AgentCapabilities, InitializeResponse, supports
 
 

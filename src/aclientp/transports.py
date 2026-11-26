@@ -4,8 +4,6 @@ This module provides transport configuration classes and utilities for running
 ACP agents over different transports (stdio, WebSocket, etc.).
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 from contextlib import asynccontextmanager

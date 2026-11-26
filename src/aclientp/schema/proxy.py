@@ -5,8 +5,6 @@ A conductor chains components (proxies) in front of a final agent. It sends
 and components reach their successor by wrapping messages in ``proxy/successor``.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 from aclientp.schema.agent_responses import InitializeResponse

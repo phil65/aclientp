@@ -11,8 +11,6 @@ Mirrors ``AgentProtocolRouter`` of the pinned TypeScript SDK
 (``schema/references.toml``).
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 from aclientp.agent.connection import AgentSideConnection as V1AgentSideConnection

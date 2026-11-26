@@ -8,8 +8,6 @@ methods accept it, e.g. ``session/fork`` with ``cursorId``.
 See the [Session Cursors RFD](https://agentclientprotocol.com/rfds/session-cursors).
 """
 
-from __future__ import annotations
-
 from typing import Annotated, Any, Literal
 
 from pydantic import Discriminator, Field, Tag

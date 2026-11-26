@@ -1,7 +1,5 @@
 """Terminal schema definitions."""
 
-from __future__ import annotations
-
 from aclientp.schema.base import AnnotatedObject
 from aclientp.schema.lenient import DefaultOnError  # noqa: TC001
 

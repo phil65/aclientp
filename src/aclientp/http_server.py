@@ -37,8 +37,6 @@ WebSocket upgrade (401), and requests whose ``Origin`` is not in ``allow_origins
 refused (403) before that, so web pages cannot drive a local agent.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable

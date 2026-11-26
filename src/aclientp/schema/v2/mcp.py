@@ -1,7 +1,5 @@
 """v2 MCP servers: transports clients pass on session setup, and MCP over ACP."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Any, Literal
 

@@ -4,8 +4,6 @@ Part of the v2 baseline: clients handle ``subagent_update``, child sessions and
 session-directed messages without a capability.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Literal
 

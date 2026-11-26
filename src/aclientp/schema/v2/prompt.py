@@ -8,8 +8,6 @@ foreground work with ``idle`` and ``stopReason: "error"``; a JSON-RPC error on
 ``session/prompt`` always means the message was not inserted.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Literal
 

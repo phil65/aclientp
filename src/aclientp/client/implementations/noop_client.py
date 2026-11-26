@@ -6,8 +6,6 @@ but don't actually need to handle client-side operations (e.g., when bridging
 an agent to a different transport).
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 from aclientp.client.protocol import Client

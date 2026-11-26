@@ -1,7 +1,5 @@
 """Notification schema definitions."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Any
 

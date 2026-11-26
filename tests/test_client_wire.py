@@ -4,8 +4,6 @@ Required fields that have a default in the model (``mcpServers: []``, an MCP
 server's ``type`` discriminator) must stay on the wire.
 """
 
-from __future__ import annotations
-
 import asyncio
 from typing import TYPE_CHECKING, Any
 

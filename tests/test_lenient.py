@@ -1,7 +1,5 @@
 """Lenient deserialization (``x-deserialize-*``): newer peers' messages still parse."""
 
-from __future__ import annotations
-
 import asyncio
 from typing import Any
 

@@ -1,7 +1,5 @@
 """v2 available commands: slash commands and skills the agent advertises."""
 
-from __future__ import annotations
-
 from typing import Annotated, Literal
 
 from pydantic import MISSING, Discriminator, Field, Tag

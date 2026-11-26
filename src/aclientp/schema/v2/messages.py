@@ -5,8 +5,6 @@ Every chunk carries the ``messageId`` of its message. Message upserts are keyed 
 unchanged, ``None`` clears it), while chunks append to it.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Literal
 

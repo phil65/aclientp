@@ -1,7 +1,5 @@
 """Client response schema definitions."""
 
-from __future__ import annotations
-
 from typing import Any, Self
 
 from aclientp.schema.base import Response

@@ -29,8 +29,6 @@ marks a single session as lost: its requests fail until ``session/load`` or
 was down.
 """
 
-from __future__ import annotations
-
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 import importlib.util

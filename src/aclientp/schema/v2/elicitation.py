@@ -4,8 +4,6 @@ Each request is scoped either to a session (optionally a tool call) or to a pend
 client-to-agent request outside of a session, e.g. during authentication.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from typing import Annotated, Any, Literal, Self
 

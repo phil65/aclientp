@@ -1,7 +1,5 @@
 """Data models for ACP registry entries."""
 
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from functools import cached_property
 from pathlib import Path

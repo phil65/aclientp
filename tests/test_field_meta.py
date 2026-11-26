@@ -1,7 +1,5 @@
 """Tests for the typed `_meta` conventions."""
 
-from __future__ import annotations
-
 from aclientp.schema import field_meta
 
 

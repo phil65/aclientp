@@ -7,8 +7,6 @@ Usage:
     python -m aclientp.bridge.ws_server "uv run agentpool serve-acp" --port 8765
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 from dataclasses import dataclass, field

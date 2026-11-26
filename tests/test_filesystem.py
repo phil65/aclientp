@@ -1,7 +1,5 @@
 """Tests for ACP filesystem."""
 
-from __future__ import annotations
-
 import sys
 
 import pytest

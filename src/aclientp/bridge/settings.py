@@ -1,7 +1,5 @@
 """Configuration settings for ACP Bridge."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 

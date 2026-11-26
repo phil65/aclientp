@@ -1,7 +1,5 @@
 """Tests for the v2 agent/client runtime and the version router."""
 
-from __future__ import annotations
-
 import asyncio
 from typing import TYPE_CHECKING, Any
 

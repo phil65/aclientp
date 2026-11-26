@@ -1,7 +1,5 @@
 """Client ACP Connection."""
 
-from __future__ import annotations
-
 from functools import partial
 from typing import TYPE_CHECKING, Any, Self
 
@@ -15,6 +13,8 @@ from aclientp.schema import (
     AuthenticateResponse,
     AuthStatusResponse,
     AuthStatusUpdateNotification,
+    ClientMethod,
+    ClientResponse,
     CloseSessionResponse,
     CreateTerminalRequest,
     DeleteSessionResponse,
@@ -65,8 +65,6 @@ if TYPE_CHECKING:
         AuthenticateRequest,
         AuthStatusRequest,
         CancelNotification,
-        ClientMethod,
-        ClientResponse,
         CloseSessionRequest,
         DeleteSessionRequest,
         DisableProviderRequest,

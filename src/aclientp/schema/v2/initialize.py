@@ -1,7 +1,5 @@
 """v2 ``initialize``: protocol version negotiation, implementation info and capabilities."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 
 from pydantic import MISSING

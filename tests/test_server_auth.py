@@ -5,8 +5,6 @@ or missing token is refused at the handshake, and browsers (which send ``Origin`
 apply no CORS to WebSockets) are refused unless their origin is allowed.
 """
 
-from __future__ import annotations
-
 import asyncio
 import secrets
 import socket

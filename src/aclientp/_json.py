@@ -1,7 +1,5 @@
 """JSON helpers for peer-controlled input."""
 
-from __future__ import annotations
-
 from typing import Any
 
 import anyenv

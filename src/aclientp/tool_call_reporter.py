@@ -1,7 +1,5 @@
 """Stateful tool call progress reporter for ACP."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any, Self
 
 from aclientp.schema.tool_call import ToolCallLocation

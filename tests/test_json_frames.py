@@ -1,7 +1,5 @@
 """Peer-controlled frames that are not JSON objects never crash a transport."""
 
-from __future__ import annotations
-
 import asyncio
 from typing import Any
 

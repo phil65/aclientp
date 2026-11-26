@@ -21,8 +21,6 @@ Commands (``uv run python -m aclientp.schema_reference <command>``):
   implementations (``schema/references.toml``) since their pinned commit, or move a pin
 """
 
-from __future__ import annotations
-
 import argparse
 from dataclasses import dataclass, field, replace
 import importlib
@@ -729,7 +727,9 @@ class FieldInfo:
 
 def wire_fields(model: type[BaseModel]) -> dict[str, FieldInfo]:
     """Wire name and behaviour of each serialized field of ``model``."""
-    if any(isinstance(info.annotation, ForwardRef) for info in model.model_fields.values()):
+    if not model.__pydantic_complete__ or any(
+        isinstance(info.annotation, ForwardRef) for info in model.model_fields.values()
+    ):
         # Annotations stay unresolved until the model is rebuilt (first validation).
         model.model_rebuild(force=True)
     return {

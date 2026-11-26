@@ -1,7 +1,5 @@
 """Slash command schema definitions."""
 
-from __future__ import annotations
-
 from typing import Self
 
 from pydantic import RootModel

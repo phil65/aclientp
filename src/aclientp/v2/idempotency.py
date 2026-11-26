@@ -29,8 +29,6 @@ backed by the agent's session storage::
         return PromptResponse(message_id=message_id)
 """
 
-from __future__ import annotations
-
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable

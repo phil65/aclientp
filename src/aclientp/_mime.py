@@ -1,7 +1,5 @@
 """MIME helpers for the ACP filesystem: decide between text and binary reads."""
 
-from __future__ import annotations
-
 import mimetypes
 
 

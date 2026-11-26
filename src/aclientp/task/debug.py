@@ -1,7 +1,5 @@
 """Debugging extensions for ACP task system."""
 
-from __future__ import annotations
-
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path

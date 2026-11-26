@@ -9,8 +9,6 @@ mock responses and the ability to manually send any notification type from
 the ACP schema through a web interface.
 """
 
-from __future__ import annotations
-
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path

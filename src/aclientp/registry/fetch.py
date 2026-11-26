@@ -1,7 +1,5 @@
 """Fetch agent data from the ACP registry."""
 
-from __future__ import annotations
-
 from typing import Final
 
 import anyenv

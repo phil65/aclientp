@@ -11,8 +11,6 @@ Wire rules, matching the v2 schema's patch semantics:
   with ``if field:``.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any, TypeIs
 
 from pydantic import MISSING, BaseModel, ConfigDict

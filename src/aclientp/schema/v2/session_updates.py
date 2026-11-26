@@ -1,7 +1,5 @@
 """v2 ``session/update``: the :data:`SessionUpdate` union and the smaller updates."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Literal
 

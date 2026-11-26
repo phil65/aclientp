@@ -4,8 +4,6 @@ Lets a client route an agent's model traffic through its own endpoints.
 Only available if the Agent advertises the ``providers`` capability.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence  # noqa: TC003
 from typing import Literal
 

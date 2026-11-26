@@ -1,7 +1,5 @@
 """Writing and reading through `ACPFileSystem.open()` (fsspec's sync file API)."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 import pytest
