@@ -287,7 +287,9 @@ class _HttpConnection:
             if message.get("method") == "initialize" and "id" in message:
                 await self._initialize(message)
             else:
-                await self._fail_or_close(message, "ACP connection is not initialized")
+                await self._fail_or_close(
+                    message, "ACP connection is not initialized", code=INVALID_REQUEST
+                )
             return
         session_id = self._session_for(message)
         if session_id is not None and not await self._attach(session_id, message):
@@ -368,6 +370,18 @@ class _HttpConnection:
             text = f"ACP initialize failed with HTTP {status}: {body[:200]}"
             await self._fail_connection(message, text, data={"status": status, "body": body})
             return
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            await self._fail_connection(
+                message, f"ACP initialize response was not valid JSON: {exc}"
+            )
+            return
+        if isinstance(payload, dict) and "error" in payload:
+            # Server rejected initialize with a JSON-RPC error and created no connection;
+            # deliver the error verbatim and keep the transport open so initialize can be retried.
+            await self._deliver(payload)
+            return
         connection_id = response.headers.get(HEADER_CONNECTION_ID)
         if not connection_id:
             await self._fail_connection(
@@ -380,7 +394,7 @@ class _HttpConnection:
         except HttpTransportError as exc:
             await self._fail_connection(message, str(exc))
             return
-        await self._deliver(response.json())
+        await self._deliver(payload)
 
     async def _fail_connection(
         self, message: JsonMessage, text: str, *, data: object = None
@@ -389,9 +403,11 @@ class _HttpConnection:
         await self._fail_request(message, text, data=data)
         await self.close_inbox()
 
-    async def _fail_or_close(self, message: JsonMessage, text: str) -> None:
+    async def _fail_or_close(
+        self, message: JsonMessage, text: str, *, code: int = INTERNAL_ERROR
+    ) -> None:
         if _is_request(message):
-            await self._fail_request(message, text)
+            await self._fail_request(message, text, code=code)
         else:
             logger.warning("Dropping ACP message: %s", text)
 
@@ -401,6 +417,11 @@ class _HttpConnection:
         if not self.closed:
             self.closed = True
             await self.inbox.aclose()
+
+    async def reject_batch(self) -> None:
+        """Answer a JSON-RPC batch array with a single ``-32600`` error."""
+        error = {"code": INVALID_REQUEST, "message": "JSON-RPC batches are not supported"}
+        await self._deliver_raw(anyenv.dump_json({"jsonrpc": "2.0", "id": None, "error": error}))
 
     async def terminate(self) -> None:
         """End the connection on the server (DELETE)."""
@@ -459,10 +480,18 @@ class _PostWriter(ByteSendStream):
         for line in lines:
             if not line.strip():
                 continue
-            if (message := decode_object(line)) is None:
+            try:
+                parsed = anyenv.load_json(line)
+            except anyenv.JsonLoadError, TypeError, UnicodeDecodeError:
+                logger.warning("Dropping non-JSON ACP message: %.200r", line)
+                continue
+            if isinstance(parsed, list):
+                await self._connection.reject_batch()
+                continue
+            if not isinstance(parsed, dict):
                 logger.warning("Dropping non-JSON-object ACP message: %.200r", line)
                 continue
-            await self._connection.send(message)
+            await self._connection.send(parsed)
 
     async def aclose(self) -> None:
         pass

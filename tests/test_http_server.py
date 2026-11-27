@@ -402,3 +402,91 @@ async def test_stalled_client_is_dropped(flood_server: tuple[str, AcpHttpServer]
                 await asyncio.sleep(0.05)
         unknown = await http.post(url, json=prompt, headers=headers)
         assert unknown.status_code == 404
+
+
+async def test_v2_http_initialize_lifecycle() -> None:
+    """Streamable HTTP preserves v2 initialize rules (pre-init, retry, repeat, post-request)."""
+    from tests.v2.test_runtime import EchoAgent as V2EchoAgent
+
+    port = _free_port()
+    shutdown = asyncio.Event()
+    transport = HttpTransport(host="127.0.0.1", port=port)
+    task = asyncio.create_task(
+        serve(None, transport, v2_agent=V2EchoAgent, shutdown_event=shutdown)
+    )
+    endpoint = f"http://127.0.0.1:{port}/acp"
+    try:
+        async with httpx2.AsyncClient() as http:
+            for _ in range(100):
+                try:
+                    await http.get(endpoint)
+                    break
+                except httpx2.ConnectError:
+                    await asyncio.sleep(0.05)
+
+        async with connect_http_transport(endpoint) as (reader, writer):
+            buf = b""
+
+            async def call(payload: dict[str, Any]) -> dict[str, Any]:
+                nonlocal buf
+                await writer.send(anyenv.dump_json(payload).encode() + b"\n")
+                while b"\n" not in buf:
+                    buf += await reader.receive()
+                line, buf = buf.split(b"\n", 1)
+                return anyenv.load_json(line, return_type=dict)
+
+            valid_init = {
+                "protocolVersion": 2,
+                "info": {"name": "c", "version": "1"},
+                "capabilities": {},
+            }
+            async with asyncio.timeout(TIMEOUT):
+                # 1. Request before initialize -> -32600 (ACP-ERROR-005)
+                pre = await call({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "session/new",
+                    "params": {"cwd": "/tmp"},
+                })
+                assert pre["error"]["code"] == -32600
+
+                # 2. Failed initialize -> -32602, transport stays open for retry (ACP-INIT-211)
+                bad = await call({
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "initialize",
+                    "params": {"info": {"name": "c", "version": "1"}},
+                })
+                assert bad["error"]["code"] == -32602
+
+                # 3. Corrected initialize succeeds
+                ok1 = await call({
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "initialize",
+                    "params": valid_init,
+                })
+                assert ok1["result"]["protocolVersion"] == 2
+
+                # 4. Repeated initialize before other requests succeeds (ACP-INIT-212)
+                ok2 = await call({
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "initialize",
+                    "params": valid_init,
+                })
+                assert ok2["result"]["protocolVersion"] == 2
+
+                # 5. Another request, then repeated initialize -> -32600 (ACP-INIT-215)
+                other = await call({"jsonrpc": "2.0", "id": 5, "method": "_tck/probe"})
+                assert other["error"]["code"] == -32601
+                late = await call({
+                    "jsonrpc": "2.0",
+                    "id": 6,
+                    "method": "initialize",
+                    "params": valid_init,
+                })
+                assert late["error"]["code"] == -32600
+    finally:
+        shutdown.set()
+        await asyncio.wait_for(task, TIMEOUT)

@@ -173,11 +173,22 @@ async def test_initialize_below_v2_is_unsupported(agent_peer: Peer) -> None:
 
 
 async def test_newer_version_is_answered_as_v2(agent_peer: Peer) -> None:
-    await agent_peer.send({**_init(1, version=7), "params": {"protocolVersion": 7}})
+    await agent_peer.send({
+        **_init(1, version=7),
+        "params": {"protocolVersion": 7, "capabilities": 42},
+    })
 
     reply = await agent_peer.receive()
 
     assert reply["result"]["protocolVersion"] == 2
+
+
+async def test_protocol_version_above_uint16_is_invalid_params(agent_peer: Peer) -> None:
+    await agent_peer.send(_init(1, version=65536))
+
+    reply = await agent_peer.receive()
+
+    assert reply["error"]["code"] == -32602
 
 
 async def test_initialize_cannot_be_repeated_after_other_requests(agent_peer: Peer) -> None:

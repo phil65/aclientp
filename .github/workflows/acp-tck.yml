@@ -1,0 +1,54 @@
+name: ACP TCK
+
+on:
+  push:
+    branches: [main]
+    paths: &acp_paths
+      - "src/aclientp/**"
+      - "tests/tck_agent.py"
+      - "tests/test_acp_tck.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/acp-tck.yml"
+  pull_request:
+    branches: [main]
+    paths: *acp_paths
+  workflow_dispatch:
+
+concurrency:
+  group: acp-tck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tck:
+    name: ACP v1 & v2 conformance (${{ matrix.transport }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        transport: [stdio, streamable_http]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+          python-version: "3.14"
+
+      - name: Install dependencies (uv sync)
+        run: uv sync --all-extras --no-group docs
+
+      - name: Run ACP TCK (${{ matrix.transport }})
+        env:
+          ACP_TCK: "1"
+        run: uv run --no-group docs pytest tests/test_acp_tck.py -k "${{ matrix.transport }}" -v

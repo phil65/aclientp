@@ -113,9 +113,17 @@ class RoutedAgentConnection:
         await self._conn.wait_closed()
 
 
+MAX_PROTOCOL_VERSION = 65535
+
+
 def _requested_version(params: Any) -> int:
     version = params.get("protocolVersion") if isinstance(params, dict) else None
     version = coerce_protocol_version(version)  # Like the v1 model: date strings are 0
-    if not isinstance(version, int) or isinstance(version, bool) or version < 0:
+    if (
+        not isinstance(version, int)
+        or isinstance(version, bool)
+        or version < 0
+        or version > MAX_PROTOCOL_VERSION
+    ):
         raise RequestError.invalid_params({"protocolVersion": version})
     return version

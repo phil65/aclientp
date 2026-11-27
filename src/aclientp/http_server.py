@@ -531,9 +531,7 @@ class AcpHttpServer:
         if not isinstance(message, dict):
             return message
         connection_id = request.headers.get(HEADER_CONNECTION_ID)
-        if message.get("method") == "initialize" and _is_request(message):
-            if connection_id is not None:
-                return _text("Initialize not allowed on existing connection", 400)
+        if message.get("method") == "initialize" and _is_request(message) and connection_id is None:
             return await self._initialize(message, owner)
         return await self._forward(request, message, owner, connection_id)
 

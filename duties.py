@@ -27,6 +27,13 @@ def test(ctx, *args: str):
 
 
 @duty(capture=False)
+def tck(ctx, *args: str):
+    """Run the official ACP Test Compatibility Kit (v1 & v2, stdio & Streamable HTTP)."""
+    args_str = " " + " ".join(args) if args else ""
+    ctx.run(f"ACP_TCK=1 uv run pytest tests/test_acp_tck.py -v{args_str}")
+
+
+@duty(capture=False)
 def clean(ctx):
     """Clean all files from the Git directory except checked-in files."""
     ctx.run("git clean -dfX")
