@@ -631,3 +631,24 @@ async def test_observer_returning_a_future_keeps_the_connection_alive() -> None:
         assert (await peer.receive()) == {"jsonrpc": "2.0", "id": 1, "result": {}}
     finally:
         await conn.close()
+
+
+async def test_observers_see_the_message_itself_not_a_copy() -> None:
+    """Observers get the dict the handler reads (no per-message deep copy)."""
+    observed: list[dict[str, Any]] = []
+    handled: list[Any] = []
+
+    async def handler(method: str, params: Any, is_notification: bool) -> Any:
+        handled.append(params)
+        return {}
+
+    writer, reader, peer = make_streams()
+    conn = Connection(handler, writer, reader, observers=[lambda e: observed.append(e.message)])
+    try:
+        params = {"blob": "x" * 1000}
+        await peer.send({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": params})
+        assert (await peer.receive())["id"] == 1
+        incoming = next(m for m in observed if m.get("method") == "ping")
+        assert incoming["params"] is handled[0]
+    finally:
+        await conn.close()

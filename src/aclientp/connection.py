@@ -3,7 +3,6 @@
 import asyncio
 from collections.abc import Awaitable, Callable, Coroutine
 from contextvars import ContextVar
-import copy
 from dataclasses import dataclass
 import inspect
 from typing import TYPE_CHECKING, Any, Literal, Self, TypeIs
@@ -54,7 +53,12 @@ StreamDirection = Literal["incoming", "outgoing"]
 
 @dataclass(frozen=True, slots=True)
 class StreamEvent:
-    """Stream event."""
+    """A message seen on the stream, passed to observers.
+
+    ``message`` is the connection's own dict, not a copy (copying every message, file
+    contents and images included, cost more than the observers did): treat it as
+    read-only, and copy it before keeping it past the call or changing it.
+    """
 
     direction: StreamDirection
     message: dict[str, Any]
@@ -411,8 +415,7 @@ class Connection:
     def _notify_observers(self, direction: StreamDirection, message: dict[str, Any]) -> None:
         if not self._observers:
             return
-        snapshot = copy.deepcopy(message)
-        event = StreamEvent(direction, snapshot)
+        event = StreamEvent(direction, message)
         for observer in list(self._observers):
             try:
                 result = observer(event)
