@@ -252,3 +252,70 @@ async def test_posts_have_a_read_timeout_and_sse_streams_none(
     assert set(timeouts["POST"]) == {7}
     assert timeouts["GET"]
     assert set(timeouts["GET"]) == {None}
+
+
+async def test_request_before_initialize_returns_invalid_request_and_allows_init() -> None:
+    server = FakeServer()
+    async with (
+        _client(server) as http,
+        connect_http_transport(URL, client=http) as (reader, writer),
+    ):
+        conn = ClientSideConnection(lambda _agent: NoOpClient(), writer, reader)
+        async with asyncio.timeout(TIMEOUT):
+            with pytest.raises(RequestError) as exc_info:
+                await conn.new_session(NewSessionRequest(cwd="/tmp", mcp_servers=[]))
+            assert exc_info.value.code == -32600
+            init = await conn.initialize(InitializeRequest(protocol_version=1))
+        assert init.protocol_version == 1
+        await conn.close()
+
+
+async def test_failed_initialize_json_rpc_error_can_be_retried() -> None:
+    attempts = 0
+    server = FakeServer()
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        if request.method == "POST":
+            message = anyenv.load_json(request.content, return_type=dict)
+            if message.get("method") == "initialize":
+                attempts += 1
+                if attempts == 1:
+                    body = {
+                        "jsonrpc": "2.0",
+                        "id": message["id"],
+                        "error": {"code": -32602, "message": "Invalid params"},
+                    }
+                    return httpx2.Response(200, json=body)
+        return await server.handle(request)
+
+    async with (
+        httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http,
+        connect_http_transport(URL, client=http) as (reader, writer),
+    ):
+        conn = ClientSideConnection(lambda _agent: NoOpClient(), writer, reader)
+        async with asyncio.timeout(TIMEOUT):
+            with pytest.raises(RequestError) as exc_info:
+                await conn.initialize(InitializeRequest(protocol_version=1))
+            assert exc_info.value.code == -32602
+            init = await conn.initialize(InitializeRequest(protocol_version=1))
+        assert init.protocol_version == 1
+        await conn.close()
+
+
+async def test_batch_array_yields_invalid_request_and_keeps_transport_open() -> None:
+    server = FakeServer()
+    async with (
+        _client(server) as http,
+        connect_http_transport(URL, client=http) as (reader, writer),
+    ):
+        async with asyncio.timeout(TIMEOUT):
+            await writer.send(b"[]\n")
+            raw = await reader.receive()
+            reply = anyenv.load_json(raw, return_type=dict)
+            assert reply["id"] is None
+            assert reply["error"]["code"] == -32600
+            conn = ClientSideConnection(lambda _agent: NoOpClient(), writer, reader)
+            init = await conn.initialize(InitializeRequest(protocol_version=1))
+            assert init.protocol_version == 1
+            await conn.close()

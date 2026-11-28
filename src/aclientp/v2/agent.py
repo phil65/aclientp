@@ -14,6 +14,7 @@ from pydantic import BaseModel, ValidationError
 
 from aclientp.connection import Connection
 from aclientp.exceptions import InvalidResponseError, RequestError
+from aclientp.schema.lenient import is_protocol_version
 from aclientp.schema.v2.base import JsonValue, to_wire
 from aclientp.schema.v2.common import Implementation
 from aclientp.schema.v2.initialize import InitializeRequest
@@ -250,12 +251,13 @@ InitializationPhase = Literal["uninitialized", "initializing", "initialized"]
 def parse_initialize(params: Any) -> InitializeRequest:
     """Parse ``initialize`` params as v2.
 
-    A version below 2 is rejected with ``-32022``. A request for a newer version was
-    written for a schema this endpoint does not know, so it is read leniently (a
-    malformed ``info`` becomes ``unknown``) and answered as v2.
+    A version that is no uint16 is rejected with ``-32602``, one below 2 with ``-32022``.
+    A request for a newer version was written for a schema this endpoint does not know, so
+    it is read leniently (a malformed ``info`` becomes ``unknown``; malformed capabilities
+    are dropped by the schema's ``DefaultOnError``) and answered as v2.
     """
     requested = params.get("protocolVersion") if isinstance(params, dict) else None
-    if not isinstance(requested, int) or isinstance(requested, bool):
+    if not is_protocol_version(requested):
         raise RequestError.invalid_params({"protocolVersion": requested})
     if requested < PROTOCOL_VERSION:
         raise RequestError.unsupported_protocol_version(requested, [PROTOCOL_VERSION])

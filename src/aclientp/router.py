@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from aclientp.agent.connection import AgentSideConnection as V1AgentSideConnection
 from aclientp.connection import Connection
 from aclientp.exceptions import RequestError
-from aclientp.schema.lenient import coerce_protocol_version
+from aclientp.schema.lenient import coerce_protocol_version, is_protocol_version
 from aclientp.task import DebuggingMessageStateStore
 from aclientp.v2.agent import AgentSideConnection as V2AgentSideConnection
 
@@ -116,6 +116,6 @@ class RoutedAgentConnection:
 def _requested_version(params: Any) -> int:
     version = params.get("protocolVersion") if isinstance(params, dict) else None
     version = coerce_protocol_version(version)  # Like the v1 model: date strings are 0
-    if not isinstance(version, int) or isinstance(version, bool) or version < 0:
+    if not is_protocol_version(version):
         raise RequestError.invalid_params({"protocolVersion": version})
     return version
