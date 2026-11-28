@@ -64,8 +64,11 @@ def _run_tck(
         *agent_cmd,
     ]
     completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    output = completed.stdout + "\n" + completed.stderr
+    if not report_path.exists():
+        pytest.fail(f"acp-tck wrote no report (exit {completed.returncode}):\n{output[-4000:]}")
     report: dict[str, Any] = json.loads(report_path.read_text(encoding="utf-8"))
-    return completed.returncode, report, completed.stdout + "\n" + completed.stderr
+    return completed.returncode, report, output
 
 
 def _format_failures(report: dict[str, Any]) -> str:

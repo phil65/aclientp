@@ -30,6 +30,7 @@ from typing import (
     Any,
     Literal,
     TypeAliasType,
+    TypeIs,
     Union,
     get_args,
     get_origin,
@@ -170,6 +171,19 @@ else:
 
         def __class_getitem__(cls, item: Any) -> Any:
             return Annotated[item, DEFAULT_ON_NULL]
+
+
+MAX_PROTOCOL_VERSION = 65535
+"""``protocolVersion`` is a uint16 in both schema versions."""
+
+
+def is_protocol_version(value: Any) -> TypeIs[int]:
+    """Whether ``value`` is a valid ``protocolVersion``: an int (no bool) in ``0..65535``."""
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= MAX_PROTOCOL_VERSION
+    )
 
 
 def coerce_protocol_version(value: Any) -> Any:

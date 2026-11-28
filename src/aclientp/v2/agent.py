@@ -14,6 +14,7 @@ from pydantic import BaseModel, ValidationError
 
 from aclientp.connection import Connection
 from aclientp.exceptions import InvalidResponseError, RequestError
+from aclientp.schema.lenient import is_protocol_version
 from aclientp.schema.v2.base import JsonValue, to_wire
 from aclientp.schema.v2.common import Implementation
 from aclientp.schema.v2.initialize import InitializeRequest
@@ -247,24 +248,16 @@ def _notification_handlers(agent: Agent) -> dict[str, Callable[[Any], Awaitable[
 InitializationPhase = Literal["uninitialized", "initializing", "initialized"]
 
 
-MAX_PROTOCOL_VERSION = 65535
-
-
 def parse_initialize(params: Any) -> InitializeRequest:
     """Parse ``initialize`` params as v2.
 
-    A version outside ``0..65535`` is rejected with ``-32602``. A version below 2 is
-    rejected with ``-32022``. A request for a newer version was written for a schema this
-    endpoint does not know, so unparseable fields (``info``, ``capabilities``, etc.) are
-    ignored and answered as v2.
+    A version that is no uint16 is rejected with ``-32602``, one below 2 with ``-32022``.
+    A request for a newer version was written for a schema this endpoint does not know, so
+    it is read leniently (a malformed ``info`` becomes ``unknown``; malformed capabilities
+    are dropped by the schema's ``DefaultOnError``) and answered as v2.
     """
     requested = params.get("protocolVersion") if isinstance(params, dict) else None
-    if (
-        not isinstance(requested, int)
-        or isinstance(requested, bool)
-        or requested < 0
-        or requested > MAX_PROTOCOL_VERSION
-    ):
+    if not is_protocol_version(requested):
         raise RequestError.invalid_params({"protocolVersion": requested})
     if requested < PROTOCOL_VERSION:
         raise RequestError.unsupported_protocol_version(requested, [PROTOCOL_VERSION])
@@ -272,13 +265,9 @@ def parse_initialize(params: Any) -> InitializeRequest:
     data = {**params, "protocolVersion": PROTOCOL_VERSION}
     if requested > PROTOCOL_VERSION:
         try:
-            return InitializeRequest.model_validate(data)
+            Implementation.model_validate(data.get("info"))
         except ValidationError:
-            try:
-                info = Implementation.model_validate(data.get("info"))
-            except ValidationError:
-                info = _UNKNOWN_IMPLEMENTATION
-            return InitializeRequest(protocol_version=PROTOCOL_VERSION, info=info)
+            data["info"] = _UNKNOWN_IMPLEMENTATION
     return InitializeRequest.model_validate(data)
 
 
