@@ -3,6 +3,23 @@
 # Last synced commit from https://github.com/agentclientprotocol/agent-client-protocol
 SPEC_SYNCED_COMMIT = "4aab69b4e6bcb53965ff5b1141d2f04a62a25c6c"
 
+# PEP 810 (3.15+): the imports below load on first use, so ``import aclientp.schema``
+# doesn't pay for the clients, transports and anyenv. Ignored on 3.14.
+__lazy_modules__ = [
+    "aclientp.agent",
+    "aclientp.agent.protocol",
+    "aclientp.client",
+    "aclientp.client.protocol",
+    "aclientp.exceptions",
+    "aclientp.http_transport",
+    "aclientp.schema",
+    "aclientp.stdio",
+    "aclientp.terminal_handle",
+    "aclientp.tool_call_state",
+    "aclientp.transports",
+    "aclientp.ws_transport",
+]
+
 from aclientp.client import DefaultACPClient, HeadlessACPClient, NoOpClient, ClientSideConnection
 from aclientp.agent import AgentSideConnection
 from aclientp.agent.protocol import Agent
